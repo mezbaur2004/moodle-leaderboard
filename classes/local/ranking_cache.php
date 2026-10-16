@@ -24,6 +24,11 @@ namespace mod_leaderboard\local;
  * A cached ranking is used while it was calculated after the last change, has not
  * expired, and was calculated with the current settings.
  *
+ * Some grade changes fire no event at all, for example hiding or excluding one student's
+ * grade. Every change to a grade writes a grade history row, though, so a cached ranking is
+ * also not used once the course has a history row newer than the ranking. On a site with
+ * grade history switched off, those changes show after the cache lifetime ("cachettl").
+ *
  * @package    mod_leaderboard
  * @copyright  2026 Pedago Academy
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
@@ -50,10 +55,51 @@ class ranking_cache {
             $ranking->get_generated() <= $changed
                 || $ranking->get_valid_until() <= $now
                 || $ranking->get_settings_key() !== $settingskey
+                || self::grades_changed_since($courseid, $ranking->get_generated())
         ) {
             return null;
         }
         return $ranking;
+    }
+
+    /**
+     * The last ranking stored, even if it is out of date, as long as it used the current settings.
+     *
+     * Used only while another request is recalculating it.
+     *
+     * @param int $cmid The leaderboard.
+     * @param int $groupid The group, or 0 for everyone.
+     * @param string $settingskey The current settings.
+     * @return ranking|null
+     */
+    public static function get_previous(int $cmid, int $groupid, string $settingskey): ?ranking {
+        $data = self::rankings()->get(self::key($cmid, $groupid));
+        if (!is_array($data)) {
+            return null;
+        }
+        $ranking = ranking::from_array($data);
+        return $ranking->get_settings_key() === $settingskey ? $ranking : null;
+    }
+
+    /**
+     * Whether any grade in the course changed at or after a time, going by the grade history.
+     *
+     * @param int $courseid The course.
+     * @param int $since The time.
+     * @return bool
+     */
+    private static function grades_changed_since(int $courseid, int $since): bool {
+        global $CFG, $DB;
+        if (!empty($CFG->disablegradehistory)) {
+            return false;
+        }
+        return $DB->record_exists_sql(
+            "SELECT 1
+               FROM {grade_grades_history} h
+               JOIN {grade_items} gi ON gi.id = h.itemid
+              WHERE h.timemodified >= :since AND gi.courseid = :courseid",
+            ['since' => $since, 'courseid' => $courseid]
+        );
     }
 
     /**

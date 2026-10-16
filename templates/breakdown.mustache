@@ -48,7 +48,7 @@
             {{#rows}}
             <tr>
                 <td>
-                    {{#url}}<a href="{{url}}">{{name}}</a>{{/url}}{{^url}}{{name}}{{/url}}
+                    {{#url}}<a href="{{url}}">{{{name}}}</a>{{/url}}{{^url}}{{{name}}}{{/url}}
                     <div class="small text-muted">{{type}}</div>
                 </td>
                 <td>{{#str}}markoutof, mod_leaderboard, { "mark": "{{mark}}", "max": "{{grademax}}" }{{/str}}</td>

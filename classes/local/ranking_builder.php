@@ -77,18 +77,48 @@ class ranking_builder {
     /**
      * The ranking for a group, from the cache when possible.
      *
+     * Only one request recalculates a ranking at a time. While it does, other requests get the
+     * previous ranking, so a burst of grading (for example a whole class finishing a quiz) does
+     * not make every page view recalculate at once.
+     *
      * @param int $groupid The group, or 0 for all participants.
      * @return ranking
      */
     public function get_ranking(int $groupid): ranking {
-        $now = time();
+        $cmid = (int) $this->cm->id;
+        $courseid = (int) $this->cm->course;
         $key = $this->get_settings_key();
-        $cached = ranking_cache::get($this->cm->id, $groupid, $this->cm->course, $key, $now);
+        $cached = ranking_cache::get($cmid, $groupid, $courseid, $key, time());
         if ($cached) {
             return $cached;
         }
-        $ranking = $this->calculate($groupid, $now);
-        ranking_cache::set($this->cm->id, $groupid, $ranking);
+
+        $factory = \core\lock\lock_config::get_lock_factory('mod_leaderboard_ranking');
+        $resource = 'cm' . $cmid . '_g' . $groupid;
+        $lock = $factory->get_lock($resource, 0);
+        if (!$lock) {
+            $previous = ranking_cache::get_previous($cmid, $groupid, $key);
+            if ($previous) {
+                return $previous;
+            }
+            // Nothing to show yet: wait for the other request, which is probably about to store it.
+            $lock = $factory->get_lock($resource, 10);
+            $cached = ranking_cache::get($cmid, $groupid, $courseid, $key, time());
+            if ($cached) {
+                if ($lock) {
+                    $lock->release();
+                }
+                return $cached;
+            }
+        }
+        try {
+            $ranking = $this->calculate($groupid, time());
+            ranking_cache::set($cmid, $groupid, $ranking);
+        } finally {
+            if ($lock) {
+                $lock->release();
+            }
+        }
         return $ranking;
     }
 
@@ -108,7 +138,7 @@ class ranking_builder {
             $userparams
         );
 
-        $result = $this->collect($usersql, $userparams, $now);
+        $result = $this->collect($usersql, $userparams, $now, false);
         $totals = $result->get_totals();
 
         $points = [];
@@ -136,7 +166,7 @@ class ranking_builder {
      */
     public function get_breakdown(int $userid): array {
         $usersql = 'SELECT lbbu.id FROM {user} lbbu WHERE lbbu.id = :lbbreakdownuser';
-        return $this->collect($usersql, ['lbbreakdownuser' => $userid], time())->get_lines($userid);
+        return $this->collect($usersql, ['lbbreakdownuser' => $userid], time(), true)->get_lines($userid);
     }
 
     /**
@@ -176,12 +206,13 @@ class ranking_builder {
      * @param string $usersql SQL returning user ids.
      * @param array $userparams Its parameters.
      * @param int $now The time to evaluate visibility at.
+     * @param bool $keeplines Whether to keep every line (breakdowns) or only the totals (rankings).
      * @return result
      */
-    private function collect(string $usersql, array $userparams, int $now): result {
-        $result = new result();
+    private function collect(string $usersql, array $userparams, int $now, bool $keeplines): result {
+        $result = new result($keeplines);
         foreach ($this->get_sources() as $source) {
-            $result->merge($source->collect((int) $this->cm->course, $usersql, $userparams, $this->settings, $now));
+            $result->merge($source->collect((int) $this->cm->course, $usersql, $userparams, $this->settings, $now, $keeplines));
         }
         return $result;
     }

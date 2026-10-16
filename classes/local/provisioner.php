@@ -28,9 +28,15 @@ use core_course\hook\after_form_submission;
  *  - new courses are handled from the after_form_submission hook, which runs at the end of
  *    create_course() for every way of creating a course;
  *  - "restore as a new course" and course copy do not call create_course(), so they are
- *    handled from the course_restored event;
- *  - importing into a course, or uploading courses with a template, can bring a second
- *    leaderboard, which is then removed again;
+ *    handled from the course_restored event. A copy of a course whose leaderboard was
+ *    deleted stays without one, however many times it is copied, and so does a deleted
+ *    course restored on the same site;
+ *  - importing or restoring into a course can bring a second leaderboard. The one brought
+ *    in is removed again, unless the course's own leaderboard was added automatically in
+ *    the same request (a course created from a template, or restored from the recycle
+ *    bin): then the one brought in, with its settings, takes its place at the top;
+ *  - a restore that first deletes the course contents also deletes the leaderboard
+ *    without a deletion event; the course gets the restored one, or a new one;
  *  - existing courses are handled by cli/provision_existing.php.
  *
  * @package    mod_leaderboard
@@ -47,11 +53,22 @@ class provisioner {
     /** @var string Copied from a course whose leaderboard had been deleted, so none was added. */
     public const STATUS_INHERITEDREMOVED = 'inheritedremoved';
 
-    /** @var int How long after adding a leaderboard an imported one replaces it (template uploads). */
-    private const RECENT = 600;
-
     /** @var bool True while this class deletes a duplicate, so the deletion is not recorded as a teacher's. */
     private static bool $deletingduplicate = false;
+
+    /** @var array courseid => list of leaderboard cmids restored into it in this request. */
+    private static array $restored = [];
+
+    /** @var int[] courseid => the leaderboard this class added to it in this request. */
+    private static array $added = [];
+
+    /**
+     * Forget what happened earlier in this request. For tests that simulate a later request.
+     */
+    public static function reset_caches(): void {
+        self::$restored = [];
+        self::$added = [];
+    }
 
     /**
      * Hook callback: a course was created or updated through create_course() or update_course().
@@ -131,7 +148,8 @@ class provisioner {
         if (!$course || self::is_skipped_format($course->format)) {
             return 'skipped';
         }
-        if ($marker = self::get_marker($courseid)) {
+        $marker = self::get_marker($courseid);
+        if ($marker && !self::is_stale($marker)) {
             return $marker->status;
         }
 
@@ -140,33 +158,69 @@ class provisioner {
             return 'locked';
         }
         try {
-            if ($marker = self::get_marker($courseid)) {
+            $marker = self::get_marker($courseid);
+            if ($marker && !self::is_stale($marker)) {
                 return $marker->status;
             }
+            $dryrun = !empty($options['dryrun']);
             $existing = self::get_instance_cmids($courseid);
             if ($existing) {
-                if (empty($options['dryrun'])) {
-                    self::insert_marker($courseid, reset($existing), self::STATUS_EXISTING, $origin);
+                if (!$dryrun) {
+                    if ($marker) {
+                        self::update_marker($marker, reset($existing), self::STATUS_EXISTING);
+                    } else {
+                        self::insert_marker($courseid, reset($existing), self::STATUS_EXISTING, $origin);
+                    }
                 }
                 return self::STATUS_EXISTING;
             }
-            if (!empty($options['dryrun'])) {
+            if ($dryrun) {
                 return 'wouldadd';
             }
 
+            $wasintransaction = $DB->is_transaction_started();
             $transaction = $DB->start_delegated_transaction();
             try {
                 $cmid = self::add_instance($course, (int) $module->id, $options);
+                if ($marker) {
+                    // The marker of a leaderboard that disappeared without a deletion event.
+                    $DB->delete_records('leaderboard_provision', ['id' => $marker->id]);
+                }
                 self::insert_marker($courseid, $cmid, self::STATUS_ADDED, $origin);
                 $transaction->allow_commit();
+                self::$added[$courseid] = $cmid;
             } catch (\Throwable $e) {
-                // Undoes everything add_moduleinfo() did, then rethrows.
+                if (!$wasintransaction && $DB->is_transaction_started()) {
+                    // When add_moduleinfo() fails it leaves its own inner transaction open, and then
+                    // rolling back ours would only mark it for rollback. Nothing was open before we
+                    // started, so undo everything now and leave the connection usable.
+                    $DB->force_transaction_rollback();
+                    throw $e;
+                }
                 $transaction->rollback($e);
             }
             return self::STATUS_ADDED;
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Whether a marker points at a leaderboard that is gone although nobody deleted it.
+     *
+     * That happens when a restore deletes the course contents first: core removes every
+     * activity directly, without a course_module_deleted event. A leaderboard that is only
+     * being deleted in the background still has its course module, so it is not stale.
+     *
+     * @param \stdClass $marker The marker.
+     * @return bool
+     */
+    private static function is_stale(\stdClass $marker): bool {
+        global $DB;
+        if (!in_array($marker->status, [self::STATUS_ADDED, self::STATUS_EXISTING], true) || empty($marker->cmid)) {
+            return false;
+        }
+        return !$DB->record_exists('course_modules', ['id' => $marker->cmid, 'course' => $marker->courseid]);
     }
 
     /**
@@ -181,6 +235,17 @@ class provisioner {
     }
 
     /**
+     * Remember a leaderboard restored in this request (called by the restore step), so the
+     * course_restored event knows which leaderboards the restore brought.
+     *
+     * @param int $courseid The course.
+     * @param int $cmid The restored course module.
+     */
+    public static function note_restored(int $courseid, int $cmid): void {
+        self::$restored[$courseid][] = $cmid;
+    }
+
+    /**
      * Event: a course was restored.
      *
      * @param \core\event\course_restored $event The event.
@@ -189,114 +254,164 @@ class provisioner {
         global $CFG;
         require_once($CFG->dirroot . '/backup/backup.class.php');
 
+        $courseid = (int) $event->objectid;
+        $restored = self::$restored[$courseid] ?? [];
+        unset(self::$restored[$courseid]);
+
         $other = $event->other;
         if (($other['type'] ?? '') !== \backup::TYPE_1COURSE) {
             return;
         }
-        $courseid = (int) $event->objectid;
         $target = (int) ($other['target'] ?? -1);
 
         if ($target === \backup::TARGET_NEW_COURSE) {
             if (!self::is_enabled()) {
                 return;
             }
-            // A copy of a course whose teacher deleted the leaderboard stays without one.
-            if (!empty($other['samesite']) && !empty($other['originalcourseid'])) {
+            // A copy of a course whose teacher deleted the leaderboard stays without one, and so do
+            // copies of that copy, and the course itself when it comes back from the recycle bin.
+            if (!empty($other['samesite']) && !empty($other['originalcourseid']) && !$restored) {
                 $original = self::get_marker((int) $other['originalcourseid']);
-                if (
-                    $original && $original->status === self::STATUS_REMOVED && !self::get_instance_cmids($courseid)
-                        && !self::get_marker($courseid)
-                ) {
-                    self::insert_marker($courseid, 0, self::STATUS_INHERITEDREMOVED, 'restore');
+                $optedout = [self::STATUS_REMOVED, self::STATUS_INHERITEDREMOVED];
+                if ($original && in_array($original->status, $optedout, true)) {
+                    self::inherit_removal($courseid);
                     return;
                 }
             }
+            // Restoring from the recycle bin creates the course first, which already added a leaderboard.
+            self::remove_duplicates($courseid, $restored);
             self::ensure($courseid, 'restore');
             return;
         }
 
         if ($target === \backup::TARGET_CURRENT_ADDING || $target === \backup::TARGET_EXISTING_ADDING) {
-            self::remove_duplicates($courseid);
+            self::remove_duplicates($courseid, $restored);
+            return;
+        }
+
+        if ($target === \backup::TARGET_CURRENT_DELETING || $target === \backup::TARGET_EXISTING_DELETING) {
+            // The restore deleted the leaderboard with the rest of the contents. Point the marker at
+            // the restored leaderboard, or add a new one. Courses never provisioned are left alone.
+            if (self::is_enabled() && self::get_marker($courseid)) {
+                self::ensure($courseid, 'restore');
+            }
         }
     }
 
     /**
-     * Keep one leaderboard when importing content brought a second one.
+     * Keep one leaderboard when a restore or import brought another.
      *
-     * Normally the leaderboard that was there first stays and the imported one goes. The
-     * exception is a leaderboard this class added only minutes ago that nobody has edited:
-     * that is the "upload courses with a template course" case, and the template's own
-     * leaderboard wins.
+     * Only leaderboards the restore brought are removed; others already in the course stay.
+     * Normally the course's own leaderboard stays and the restored one goes. When the
+     * course's own one was added automatically earlier in the same request and not edited
+     * since (a course created from a template, or restored from the recycle bin), the
+     * restored one takes its place.
+     *
+     * @param int $courseid The course.
+     * @param int[] $restored Course modules the restore brought.
+     */
+    public static function remove_duplicates(int $courseid, array $restored): void {
+        $cmids = self::get_instance_cmids($courseid);
+        $restored = array_values(array_intersect($restored, $cmids));
+        $previous = array_values(array_diff($cmids, $restored));
+        if (!$restored || !$previous) {
+            return;
+        }
+
+        $marker = self::get_marker($courseid);
+        $replace = $marker && $marker->status === self::STATUS_ADDED && count($previous) === 1
+            && (int) $marker->cmid === $previous[0] && (self::$added[$courseid] ?? 0) === $previous[0]
+            && self::is_pristine($previous[0]);
+
+        if (!$replace) {
+            foreach ($restored as $cmid) {
+                self::delete_duplicate($courseid, $cmid);
+            }
+            return;
+        }
+
+        $keep = $restored[0];
+        self::move_before($courseid, $keep, $previous[0]);
+        self::update_marker($marker, $keep, self::STATUS_EXISTING);
+        foreach (array_merge($previous, array_slice($restored, 1)) as $cmid) {
+            self::delete_duplicate($courseid, $cmid);
+        }
+    }
+
+    /**
+     * A new course copied or restored from one whose teacher deleted the leaderboard: no leaderboard.
      *
      * @param int $courseid The course.
      */
-    public static function remove_duplicates(int $courseid): void {
-        global $DB;
-
-        $cmids = self::get_instance_cmids($courseid);
-        if (count($cmids) < 2) {
+    private static function inherit_removal(int $courseid): void {
+        $marker = self::get_marker($courseid);
+        if ($marker && $marker->status === self::STATUS_ADDED && (self::$added[$courseid] ?? 0) === (int) $marker->cmid) {
+            // The recycle bin created the course first, which added a default leaderboard.
+            $cmids = self::get_instance_cmids($courseid);
+            if (in_array((int) $marker->cmid, $cmids, true) && self::is_pristine((int) $marker->cmid)) {
+                self::delete_duplicate($courseid, (int) $marker->cmid);
+            }
+        }
+        if (self::get_instance_cmids($courseid)) {
             return;
         }
-        $marker = self::get_marker($courseid);
-
-        $keep = reset($cmids);
-        if ($marker && in_array((int) $marker->cmid, $cmids, true)) {
-            $keep = (int) $marker->cmid;
-            if (
-                $marker->status === self::STATUS_ADDED && $marker->timecreated >= time() - self::RECENT
-                    && self::is_pristine((int) $marker->cmid)
-            ) {
-                $others = array_values(array_diff($cmids, [(int) $marker->cmid]));
-                $keep = $others[0];
-            }
-        }
-
-        if ($marker && (int) $marker->cmid !== $keep) {
-            $marker->cmid = $keep;
-            $marker->status = self::STATUS_EXISTING;
-            $marker->timemodified = time();
-            $DB->update_record('leaderboard_provision', $marker);
-        }
-
-        self::$deletingduplicate = true;
-        try {
-            foreach ($cmids as $cmid) {
-                if ($cmid !== $keep) {
-                    self::delete_cm($courseid, $cmid);
-                }
-            }
-        } finally {
-            self::$deletingduplicate = false;
+        if ($marker) {
+            self::update_marker($marker, 0, self::STATUS_INHERITEDREMOVED);
+        } else {
+            self::insert_marker($courseid, 0, self::STATUS_INHERITEDREMOVED, 'restore');
         }
     }
 
     /**
-     * Event: a course module was deleted. Remember when it was the provisioned leaderboard.
+     * Event: a course module was deleted. When it was the course's leaderboard, remember that
+     * the teacher does not want one, so it is never added back.
      *
      * @param \core\event\course_module_deleted $event The event.
      */
     public static function course_module_deleted(\core\event\course_module_deleted $event): void {
-        global $DB;
-
         if (self::$deletingduplicate || ($event->other['modulename'] ?? '') !== 'leaderboard') {
             return;
         }
-        $marker = self::get_marker((int) $event->courseid);
-        if ($marker && (int) $marker->cmid === (int) $event->objectid) {
-            $marker->status = self::STATUS_REMOVED;
-            $marker->timemodified = time();
-            $DB->update_record('leaderboard_provision', $marker);
+        $courseid = (int) $event->courseid;
+        $cmid = (int) $event->objectid;
+        $remaining = self::get_instance_cmids($courseid);
+        $marker = self::get_marker($courseid);
+        if (!$marker) {
+            // Deleted before the course was ever provisioned (for example before the backfill ran).
+            if (!$remaining) {
+                self::insert_marker($courseid, $cmid, self::STATUS_REMOVED, 'delete');
+            }
+            return;
+        }
+        if ((int) $marker->cmid !== $cmid) {
+            return;
+        }
+        if ($remaining) {
+            self::update_marker($marker, reset($remaining), self::STATUS_EXISTING);
+        } else {
+            self::update_marker($marker, $cmid, self::STATUS_REMOVED);
         }
     }
 
     /**
      * Event: a course was deleted.
      *
+     * A teacher's choice not to have a leaderboard is kept, so the course stays without one
+     * when it is restored on this site from a backup or from the recycle bin. Course ids are
+     * never reused, and the record holds no personal data.
+     *
      * @param \core\event\course_deleted $event The event.
      */
     public static function course_deleted(\core\event\course_deleted $event): void {
         global $DB;
-        $DB->delete_records('leaderboard_provision', ['courseid' => $event->objectid]);
+        [$statussql, $params] = $DB->get_in_or_equal(
+            [self::STATUS_REMOVED, self::STATUS_INHERITEDREMOVED],
+            SQL_PARAMS_NAMED,
+            'lbstatus',
+            false
+        );
+        $params['courseid'] = $event->objectid;
+        $DB->delete_records_select('leaderboard_provision', "courseid = :courseid AND status $statussql", $params);
     }
 
     /**
@@ -399,6 +514,9 @@ class provisioner {
             'introformat' => FORMAT_HTML,
             'showdescription' => 0,
             'beforemod' => $beforemod,
+            // The course defaults, as the "add an activity" form uses them.
+            'groupmode' => (int) $course->groupmode,
+            'groupingid' => (int) $course->defaultgroupingid,
         ];
         $moduleinfo = add_moduleinfo($moduleinfo, $course);
         return (int) $moduleinfo->coursemodule;
@@ -426,6 +544,47 @@ class provisioner {
     }
 
     /**
+     * Change the provisioning record.
+     *
+     * @param \stdClass $marker The record.
+     * @param int $cmid The course module, or 0.
+     * @param string $status The status.
+     */
+    private static function update_marker(\stdClass $marker, int $cmid, string $status): void {
+        global $DB;
+        $marker->cmid = $cmid;
+        $marker->status = $status;
+        $marker->timemodified = time();
+        $DB->update_record('leaderboard_provision', $marker);
+    }
+
+    /**
+     * Delete a leaderboard this class does not want, without recording it as a teacher's
+     * deletion and without putting it in the course recycle bin (restoring it from there
+     * would bring the duplicate back).
+     *
+     * @param int $courseid The course.
+     * @param int $cmid The course module.
+     */
+    private static function delete_duplicate(int $courseid, int $cmid): void {
+        global $CFG;
+        $hadforced = isset($CFG->forced_plugin_settings['tool_recyclebin']);
+        $forced = $CFG->forced_plugin_settings['tool_recyclebin'] ?? [];
+        $CFG->forced_plugin_settings['tool_recyclebin']['coursebinenable'] = 0;
+        self::$deletingduplicate = true;
+        try {
+            self::delete_cm($courseid, $cmid);
+        } finally {
+            self::$deletingduplicate = false;
+            if ($hadforced) {
+                $CFG->forced_plugin_settings['tool_recyclebin'] = $forced;
+            } else {
+                unset($CFG->forced_plugin_settings['tool_recyclebin']);
+            }
+        }
+    }
+
+    /**
      * Delete a course module, using the newer API where it exists.
      *
      * @param int $courseid The course.
@@ -439,5 +598,26 @@ class provisioner {
         }
         require_once($CFG->dirroot . '/course/lib.php');
         course_delete_module($cmid);
+    }
+
+    /**
+     * Move a course module to just before another one, using the newer API where it exists.
+     *
+     * @param int $courseid The course.
+     * @param int $cmid The course module to move.
+     * @param int $beforecmid The course module to put it before.
+     */
+    private static function move_before(int $courseid, int $cmid, int $beforecmid): void {
+        global $CFG, $DB;
+        if (method_exists(\core_courseformat\local\cmactions::class, 'move_before')) {
+            \core_courseformat\formatactions::cm($courseid)->move_before($cmid, $beforecmid);
+            return;
+        }
+        require_once($CFG->dirroot . '/course/lib.php');
+        $cm = get_coursemodule_from_id('leaderboard', $cmid, $courseid, false, MUST_EXIST);
+        $beforecm = $DB->get_record('course_modules', ['id' => $beforecmid, 'course' => $courseid], 'id, section', MUST_EXIST);
+        $section = $DB->get_record('course_sections', ['id' => $beforecm->section], '*', MUST_EXIST);
+        moveto_module($cm, $section, $beforecmid);
+        rebuild_course_cache($courseid, true);
     }
 }

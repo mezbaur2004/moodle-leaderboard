@@ -35,13 +35,11 @@ if ($ADMIN->fulltree) {
     ));
 
     foreach (points_settings::FIELDS as $field => $default) {
-        $settings->add(new admin_setting_configtext(
+        $settings->add(new \mod_leaderboard\admin\setting_points(
             'leaderboard/' . $field,
             get_string($field, 'leaderboard'),
             get_string($field . '_desc', 'leaderboard'),
-            $default,
-            PARAM_FLOAT,
-            6
+            $default
         ));
     }
 
@@ -111,13 +109,14 @@ if ($ADMIN->fulltree) {
         1
     ));
 
-    $settings->add(new admin_setting_configtext(
+    $settings->add(new admin_setting_configtext_with_maxlength(
         'leaderboard/autoprovisionname',
         get_string('autoprovisionname', 'leaderboard'),
         get_string('autoprovisionname_desc', 'leaderboard'),
         get_string('defaultname', 'leaderboard'),
         PARAM_TEXT,
-        40
+        40,
+        255
     ));
 
     $formats = [];

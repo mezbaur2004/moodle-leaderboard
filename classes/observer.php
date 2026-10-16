@@ -41,6 +41,17 @@ class observer {
     }
 
     /**
+     * A user's profile was updated. Their suspension may have changed, so mark their courses as changed.
+     *
+     * @param \core\event\user_updated $event The event.
+     */
+    public static function user_updated(\core\event\user_updated $event): void {
+        foreach (enrol_get_all_users_courses((int) $event->relateduserid, false, 'id') as $course) {
+            ranking_cache::course_changed((int) $course->id);
+        }
+    }
+
+    /**
      * A course was restored.
      *
      * @param \core\event\course_restored $event The event.

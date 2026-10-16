@@ -247,4 +247,114 @@ final class output_test extends \advanced_testcase {
         $empty = $this->getDataGenerator()->create_course();
         $this->assertNull(api::find_course_leaderboard($empty->id));
     }
+
+    public function test_breakdown_respects_separate_groups(): void {
+        global $DB;
+        $DB->set_field('course_modules', 'groupmode', SEPARATEGROUPS, ['id' => $this->leaderboard->cmid]);
+        rebuild_course_cache($this->course->id, true);
+        $groupa = $this->getDataGenerator()->create_group(['courseid' => $this->course->id]);
+        $groupb = $this->getDataGenerator()->create_group(['courseid' => $this->course->id]);
+        $this->getDataGenerator()->create_group_member(['groupid' => $groupa->id, 'userid' => $this->students[0]->id]);
+        $this->getDataGenerator()->create_group_member(['groupid' => $groupb->id, 'userid' => $this->students[1]->id]);
+        $tutor = $this->getDataGenerator()->create_and_enrol($this->course, 'teacher');
+        $this->getDataGenerator()->create_group_member(['groupid' => $groupa->id, 'userid' => $tutor->id]);
+        $stranger = $this->getDataGenerator()->create_user();
+
+        // A non-editing teacher only sees breakdowns of students in their own groups.
+        $this->setUser($tutor);
+        $board = new board($this->cm());
+        $this->assertTrue($board->can_view_breakdown((int) $this->students[0]->id));
+        $this->assertFalse($board->can_view_breakdown((int) $this->students[1]->id));
+        $this->assertFalse($board->can_view_breakdown((int) $stranger->id), 'Only ranked users.');
+
+        // An editing teacher can access all groups.
+        $this->setUser($this->teacher);
+        $board = new board($this->cm());
+        $this->assertTrue($board->can_view_breakdown((int) $this->students[1]->id));
+        $this->assertFalse($board->can_view_breakdown((int) $stranger->id));
+    }
+
+    public function test_activity_names_are_escaped_once(): void {
+        global $DB;
+        $DB->set_field('grade_items', 'itemname', 'Reading & Writing', ['itemmodule' => 'quiz', 'courseid' => $this->course->id]);
+        $this->setUser($this->students[0]);
+        $html = $this->render('breakdown', (new board($this->cm()))->export_breakdown((int) $this->students[0]->id));
+        $this->assertStringContainsString('Reading &amp; Writing', $html);
+        $this->assertStringNotContainsString('&amp;amp;', $html);
+    }
+
+    public function test_app_page_survives_braces_and_at_signs_in_names(): void {
+        global $DB;
+        $DB->set_field('user', 'firstname', 'Rahim {RU}', ['id' => $this->students[0]->id]);
+        $DB->set_field('user', 'lastname', '@home', ['id' => $this->students[0]->id]);
+        $DB->set_field('grade_items', 'itemname', 'Lab report} & {{1+1}}', ['itemmodule' => 'quiz',
+            'courseid' => $this->course->id]);
+        $this->setUser($this->students[0]);
+
+        $html = mobile::mobile_view(['cmid' => $this->leaderboard->cmid, 'courseid' => $this->course->id])['templates'][0]['html'];
+        // The app compiles this with Angular, which treats "{", "}" and "@" in text as template syntax.
+        $text = preg_replace('/\{\{ \'plugin\.mod_leaderboard\.[a-z_]+\' \| translate \}\}/', '', $html);
+        $this->assertStringNotContainsString('{', $text);
+        $this->assertStringNotContainsString('}', $text);
+        $this->assertStringNotContainsString('@', $text);
+        $this->assertStringContainsString('Rahim &#123;RU&#125; &#64;home', $html);
+        $this->assertStringContainsString('Lab report&#125; &amp; &#123;&#123;1+1&#125;&#125;', $html);
+    }
+
+    public function test_app_page_is_logged(): void {
+        $this->setUser($this->students[0]);
+        $sink = $this->redirectEvents();
+        mobile::mobile_view(['cmid' => $this->leaderboard->cmid, 'courseid' => $this->course->id]);
+        $events = array_filter($sink->get_events(), fn($e) => $e instanceof \mod_leaderboard\event\course_module_viewed);
+        $sink->close();
+        $this->assertCount(1, $events);
+    }
+
+    public function test_app_course_page_shows_shared_ranks_and_description(): void {
+        global $DB;
+        // Rahim and Nusrat share first place.
+        $quiz = $DB->get_record('quiz', ['course' => $this->course->id]);
+        grade_update(
+            'mod/quiz',
+            $this->course->id,
+            'mod',
+            'quiz',
+            $quiz->id,
+            0,
+            [$this->students[1]->id => (object) ['userid' => $this->students[1]->id, 'rawgrade' => 10]]
+        );
+        $DB->set_field('leaderboard', 'intro', '<p>Points from quizzes</p>', ['id' => $this->leaderboard->id]);
+        $DB->set_field('course_modules', 'showdescription', 1, ['id' => $this->leaderboard->cmid]);
+        rebuild_course_cache($this->course->id, true);
+        api::reset_caches();
+        $this->setUser($this->students[1]);
+        $args = ['cmid' => $this->leaderboard->cmid, 'courseid' => $this->course->id];
+
+        $html = mobile::mobile_course_page($args)['templates'][0]['html'];
+        $this->assertStringContainsString('#1 Rahim Uddin', $html);
+        $this->assertStringNotContainsString('#2', $html);
+        $this->assertStringContainsString('#1 <strong>Nusrat Jahan</strong>', $html);
+        $this->assertStringContainsString('Points from quizzes', $html);
+        $this->assertStringContainsString(get_string('mobile_lastupdated', 'leaderboard', ''), $html);
+
+        // With the summary off, only the name and the description.
+        $DB->set_field('leaderboard', 'showinline', 0, ['id' => $this->leaderboard->id]);
+        rebuild_course_cache($this->course->id, true);
+        $html = mobile::mobile_course_page($args)['templates'][0]['html'];
+        $this->assertStringContainsString('Class ranking', $html);
+        $this->assertStringContainsString('Points from quizzes', $html);
+        $this->assertStringNotContainsString('Rahim', $html);
+    }
+
+    public function test_points_setting_accepts_any_number_format(): void {
+        $setting = new \mod_leaderboard\admin\setting_points('leaderboard/assignpoints', 'Assignment', '', 2);
+        foreach (['1.50', '2.0', ' 3 ', '0'] as $value) {
+            $this->assertTrue($setting->validate($value), $value);
+        }
+        foreach (['-1', 'abc', ''] as $value) {
+            $this->assertIsString($setting->validate($value), $value);
+        }
+        $this->assertSame('', $setting->write_setting('1.50'));
+        $this->assertSame('1.5', get_config('leaderboard', 'assignpoints'));
+    }
 }

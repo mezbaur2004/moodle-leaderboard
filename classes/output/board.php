@@ -81,9 +81,10 @@ class board {
      * Data for the full leaderboard page (template mod_leaderboard/board).
      *
      * @param int $topn How many top students to show; 0 for everyone.
+     * @param bool $pictures Whether to include user pictures (the app does not show them).
      * @return array
      */
-    public function export_full(int $topn): array {
+    public function export_full(int $topn, bool $pictures = true): array {
         global $USER;
 
         ['ranking' => $ranking] = api::get_viewer_ranking($this->cm, true);
@@ -93,7 +94,7 @@ class board {
         }
 
         $top = $ranking->get_top($topn);
-        $data['rows'] = $this->export_rows($top, true);
+        $data['rows'] = $this->export_rows($top, $pictures);
 
         $me = $ranking->get_entry((int) $USER->id);
         $data['me'] = $me ? $this->export_me($me, $ranking) : null;
@@ -105,7 +106,7 @@ class board {
         }
         $data['meoutside'] = $me && !$inlist;
         if ($data['meoutside']) {
-            $data['merow'] = $this->export_rows([$me], true)[0];
+            $data['merow'] = $this->export_rows([$me], $pictures)[0];
         }
         $data['showall'] = $topn === 0 || $topn >= $ranking->count();
         $data['shown'] = count($top);
@@ -160,12 +161,37 @@ class board {
     /**
      * Whether the current user may see a given user's breakdown.
      *
+     * Anyone may see their own. Another user's needs mod/leaderboard:viewallbreakdowns, and
+     * that user must be someone this leaderboard ranks and, in separate groups mode, share a
+     * group with the viewer (unless the viewer can access all groups), as in the grader report.
+     *
      * @param int $userid The user.
      * @return bool
      */
     public function can_view_breakdown(int $userid): bool {
         global $USER;
-        return $userid === (int) $USER->id || has_capability('mod/leaderboard:viewallbreakdowns', $this->cm->context);
+        if ($userid === (int) $USER->id) {
+            return true;
+        }
+        $context = $this->cm->context;
+        if (!has_capability('mod/leaderboard:viewallbreakdowns', $context)) {
+            return false;
+        }
+        if (!api::get_builder($this->cm)->is_ranked_user($userid)) {
+            return false;
+        }
+        if (
+            groups_get_activity_groupmode($this->cm) != SEPARATEGROUPS
+                || has_capability('moodle/site:accessallgroups', $context)
+        ) {
+            return true;
+        }
+        foreach (groups_get_activity_allowed_groups($this->cm) as $group) {
+            if (groups_is_member($group->id, $userid)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

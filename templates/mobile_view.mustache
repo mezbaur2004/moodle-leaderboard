@@ -19,8 +19,12 @@
     @template mod_leaderboard/mobile_view
 
     The leaderboard page in the Moodle app. Rendered by Moodle, then compiled by the app
-    (Angular). Names and activity names are wrapped in ngNonBindable so that text such as
-    "{{ }}" in them is never treated as app template code.
+    (Angular). Every text value is escaped by classes/output/mobile.php::escape_for_app(),
+    which also turns curly brackets and at signs into entities so Angular never reads a
+    name as template code, so values are printed unescaped (with an ampersand tag). They
+    are also wrapped in ngNonBindable; app strings ("translate") must stay outside those
+    elements, or Angular would not translate them. The app does not load styles.css, so
+    the student's own row is marked with markup only.
 
     Example context (json):
     {
@@ -38,7 +42,7 @@
     <%#me%>
     <ion-card>
         <ion-card-content>
-            <p class="item-heading"><strong ngNonBindable><% text %></strong></p>
+            <p class="item-heading"><strong ngNonBindable><%& text %></strong></p>
         </ion-card-content>
     </ion-card>
     <%/me%>
@@ -46,22 +50,22 @@
     <%#showboard%>
     <ion-list>
         <%#rows%>
-        <ion-item class="<%#isme%>mod-leaderboard-isme<%/isme%>">
+        <ion-item>
             <ion-badge slot="start" color="<%#isme%>primary<%/isme%><%^isme%>medium<%/isme%>"><% rank %></ion-badge>
             <ion-label>
-                <p class="item-heading" ngNonBindable><% name %></p>
+                <p class="item-heading" ngNonBindable><%#isme%><strong><%/isme%><%& name %><%#isme%></strong><%/isme%></p>
             </ion-label>
-            <ion-note slot="end" ngNonBindable><% points %></ion-note>
+            <ion-note slot="end" ngNonBindable><%& points %></ion-note>
         </ion-item>
         <%/rows%>
         <%#meoutside%>
         <%#merow%>
-        <ion-item class="mod-leaderboard-isme">
+        <ion-item>
             <ion-badge slot="start" color="primary"><% rank %></ion-badge>
             <ion-label>
-                <p class="item-heading" ngNonBindable><% name %></p>
+                <p class="item-heading" ngNonBindable><strong><%& name %></strong></p>
             </ion-label>
-            <ion-note slot="end" ngNonBindable><% points %></ion-note>
+            <ion-note slot="end" ngNonBindable><%& points %></ion-note>
         </ion-item>
         <%/merow%>
         <%/meoutside%>
@@ -81,21 +85,21 @@
     <%#breakdown%>
     <ion-list>
         <ion-list-header>
-            <ion-label><h2 ngNonBindable><% title %></h2></ion-label>
+            <ion-label><h2 ngNonBindable><%& title %></h2></ion-label>
         </ion-list-header>
         <%#rows%>
         <ion-item>
             <ion-label>
-                <p class="item-heading" ngNonBindable><% name %></p>
-                <p ngNonBindable><% type %> &middot; <% mark %> / <% grademax %> &times; <% permark %><%#late%> &middot; {{ 'plugin.mod_leaderboard.late' | translate }}<%/late%></p>
+                <p class="item-heading" ngNonBindable><%& name %></p>
+                <p><span ngNonBindable><%& type %> &middot; <%& mark %> / <%& grademax %> &times; <%& permark %></span><%#late%> &middot; {{ 'plugin.mod_leaderboard.late' | translate }}<%/late%></p>
             </ion-label>
-            <ion-note slot="end" ngNonBindable><% points %></ion-note>
+            <ion-note slot="end" ngNonBindable><%& points %></ion-note>
         </ion-item>
         <%/rows%>
         <%#hasrows%>
         <ion-item>
             <ion-label><p class="item-heading">{{ 'plugin.mod_leaderboard.total' | translate }}</p></ion-label>
-            <ion-note slot="end" ngNonBindable><strong><% total %></strong></ion-note>
+            <ion-note slot="end" ngNonBindable><strong><%& total %></strong></ion-note>
         </ion-item>
         <%/hasrows%>
         <%^hasrows%>
@@ -104,6 +108,8 @@
     </ion-list>
     <%/breakdown%>
 
-    <p class="ion-text-center ion-padding-horizontal"><small ngNonBindable><% updatedtext %></small></p>
+    <%#updatedtext%>
+    <p class="ion-text-center ion-padding-horizontal"><small ngNonBindable><%& updatedtext %></small></p>
+    <%/updatedtext%>
     <p class="ion-text-center ion-padding-horizontal"><small>{{ 'plugin.mod_leaderboard.mobile_pulltorefresh' | translate }}</small></p>
 </div>

@@ -22,8 +22,14 @@ use mod_leaderboard\local\ranking_builder;
  * Public API of mod_leaderboard, for this plugin's own pages and for other plugins
  * (for example a course dashboard block).
  *
- * Everything here works for the current user ($USER), because group selection and
- * capability checks depend on the session.
+ * Everything here works for the current user ($USER), because group selection depends
+ * on the session.
+ *
+ * Apart from find_course_leaderboard(), these methods do not check capabilities and do not
+ * apply the site's name rules (anonymous mode and the minimum number of students). Callers
+ * must check mod/leaderboard:view themselves, and should display through
+ * \mod_leaderboard\output\board, which applies those rules and checks who may see whose
+ * breakdown (board::can_view_breakdown()).
  *
  * @package    mod_leaderboard
  * @copyright  2026 Pedago Academy
@@ -122,7 +128,8 @@ class api {
      * A short summary for the current user: the top students and the user's own place.
      *
      * Meant for course-page summaries, the mobile app and dashboard blocks. Names are not
-     * included; use \mod_leaderboard\output\board to display it.
+     * included, and the name rules are not applied; use \mod_leaderboard\output\board to
+     * display it.
      *
      * @param \cm_info $cm The course module.
      * @param int $limit How many top students.
@@ -144,7 +151,7 @@ class api {
     }
 
     /**
-     * How a user's points were calculated.
+     * How a user's points were calculated. No access check: see board::can_view_breakdown().
      *
      * @param \cm_info $cm The course module.
      * @param int $userid The user.

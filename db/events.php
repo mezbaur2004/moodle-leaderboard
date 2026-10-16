@@ -42,8 +42,16 @@ $observers = [
     ['eventname' => '\core\event\user_enrolment_deleted', 'callback' => $changed, 'internal' => false],
     ['eventname' => '\core\event\role_assigned', 'callback' => $changed, 'internal' => false],
     ['eventname' => '\core\event\role_unassigned', 'callback' => $changed, 'internal' => false],
+    ['eventname' => '\core\event\enrol_instance_updated', 'callback' => $changed, 'internal' => false],
+    ['eventname' => '\core\event\capability_assigned', 'callback' => $changed, 'internal' => false],
+    ['eventname' => '\core\event\capability_unassigned', 'callback' => $changed, 'internal' => false],
     ['eventname' => '\core\event\group_member_added', 'callback' => $changed, 'internal' => false],
     ['eventname' => '\core\event\group_member_removed', 'callback' => $changed, 'internal' => false],
+    ['eventname' => '\core\event\group_deleted', 'callback' => $changed, 'internal' => false],
+    ['eventname' => '\core\event\grouping_group_assigned', 'callback' => $changed, 'internal' => false],
+    ['eventname' => '\core\event\grouping_group_unassigned', 'callback' => $changed, 'internal' => false],
+    ['eventname' => '\core\event\course_updated', 'callback' => $changed, 'internal' => false],
+    ['eventname' => '\core\event\course_section_updated', 'callback' => $changed, 'internal' => false],
     ['eventname' => '\core\event\course_module_updated', 'callback' => $changed, 'internal' => false],
     ['eventname' => '\mod_assign\event\assessable_submitted', 'callback' => $changed, 'internal' => false],
     ['eventname' => '\mod_assign\event\submission_status_updated', 'callback' => $changed, 'internal' => false],
@@ -60,6 +68,8 @@ $observers = [
     ['eventname' => '\mod_quiz\event\group_override_created', 'callback' => $changed, 'internal' => false],
     ['eventname' => '\mod_quiz\event\group_override_updated', 'callback' => $changed, 'internal' => false],
     ['eventname' => '\mod_quiz\event\group_override_deleted', 'callback' => $changed, 'internal' => false],
+    // A user suspended or unsuspended on the whole site leaves or joins every ranking they are in.
+    ['eventname' => '\core\event\user_updated', 'callback' => '\mod_leaderboard\observer::user_updated', 'internal' => false],
 
     // Automatic provisioning.
     [
