@@ -18,29 +18,36 @@
     @template mod_leaderboard/mobile_course_page
 
     The leaderboard as it appears on the Moodle app's course page. It replaces the activity's
-    title there, so it starts with the name. Plain HTML only: no app components.
+    title and description there, so it starts with the name and includes the description
+    when that is set to show on the course page. Plain HTML only: no app components, and no
+    link (the whole card opens the leaderboard). Ranks are printed, not numbered by a list,
+    because students with the same points share a rank.
 
     Example context (json):
     {
         "name": "Course leaderboard",
-        "url": "https://example.com/mod/leaderboard/view.php?id=12",
+        "intro": "",
         "showsummary": true,
         "showboard": true,
+        "nogroup": false, "empty": false, "toofew": false,
         "rows": [{"rank": 1, "points": "240", "name": "Rahim Uddin", "isme": false}],
-        "me": {"text": "You are #2 of 48 with 198 points"}
+        "me": {"text": "You are #2 of 48 with 198 points"},
+        "updatedtext": "Updated 16/10/26, 10:30"
     }
 }}
 <div class="mod-leaderboard-appcard">
-    <strong>{{name}}</strong>
+    <strong>{{{name}}}</strong>
+    {{#intro}}<div>{{{intro}}}</div>{{/intro}}
     {{#showsummary}}
     {{#showboard}}
-    <ol style="margin: 0.25em 0 0; padding-left: 1.4em;">
-        {{#rows}}
-        <li>{{#isme}}<strong>{{/isme}}{{name}} &mdash; {{#str}}pointsshort, mod_leaderboard, {{points}}{{/str}}{{#isme}}</strong>{{/isme}}</li>
-        {{/rows}}
-    </ol>
-    {{#me}}<div style="margin-top: 0.25em;">{{text}}</div>{{/me}}
+    {{#rows}}
+    <div>#{{rank}} {{#isme}}<strong>{{/isme}}{{name}}{{#isme}}</strong>{{/isme}} &mdash; {{#str}}pointsshort, mod_leaderboard, {{points}}{{/str}}</div>
+    {{/rows}}
+    {{#me}}<div><strong>{{text}}</strong></div>{{/me}}
     {{/showboard}}
+    {{#nogroup}}<div>{{#str}}nogroup, mod_leaderboard{{/str}}</div>{{/nogroup}}
+    {{#empty}}<div>{{#str}}nostudents, mod_leaderboard{{/str}}</div>{{/empty}}
+    {{#toofew}}<div>{{#str}}toofew, mod_leaderboard{{/str}}</div>{{/toofew}}
+    {{#updatedtext}}<div><small>{{updatedtext}}</small></div>{{/updatedtext}}
     {{/showsummary}}
-    <div style="margin-top: 0.25em;"><a href="{{url}}">{{#str}}seefull, mod_leaderboard{{/str}}</a></div>
 </div>

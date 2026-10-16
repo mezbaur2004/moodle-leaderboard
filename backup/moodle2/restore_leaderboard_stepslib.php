@@ -49,5 +49,7 @@ class restore_leaderboard_activity_structure_step extends restore_activity_struc
     #[\Override]
     protected function after_execute() {
         $this->add_related_files('mod_leaderboard', 'intro', null);
+        // Tell the provisioner which leaderboards this restore brought, for the course_restored event.
+        \mod_leaderboard\local\provisioner::note_restored((int) $this->get_courseid(), (int) $this->task->get_moduleid());
     }
 }

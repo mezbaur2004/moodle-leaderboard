@@ -38,7 +38,15 @@ interface source {
      * @param array $userparams Named parameters for $usersql.
      * @param points_settings $settings Points per mark.
      * @param int $now The time to evaluate visibility at.
+     * @param bool $keeplines False when only the totals are needed (rankings), true for breakdowns.
      * @return result
      */
-    public function collect(int $courseid, string $usersql, array $userparams, points_settings $settings, int $now): result;
+    public function collect(
+        int $courseid,
+        string $usersql,
+        array $userparams,
+        points_settings $settings,
+        int $now,
+        bool $keeplines
+    ): result;
 }

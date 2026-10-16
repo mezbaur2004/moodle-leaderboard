@@ -216,8 +216,9 @@ function leaderboard_cm_info_view(cm_info $cm) {
             'mod_leaderboard/summary',
             $board->export_summary(3)
         );
-        // The description (when shown on the course page) is formatted first, then the summary is added.
-        $existing = $cm->get_formatted_content(['overflowdiv' => true]);
+        // The description (when shown on the course page) is formatted first, with the same
+        // options as the course page uses, then the summary is added.
+        $existing = $cm->get_formatted_content(['overflowdiv' => true, 'noclean' => true]);
         $cm->set_content($existing . $html, true);
     } catch (\Throwable $e) {
         debugging('mod_leaderboard: could not show the summary: ' . $e->getMessage(), DEBUG_DEVELOPER);

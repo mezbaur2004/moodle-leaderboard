@@ -24,11 +24,35 @@ namespace mod_leaderboard\local\source;
  * @license    http://www.gnu.org/copyleft/gpl.html GNU GPL v3 or later
  */
 class result {
+    /** @var bool Whether to keep every line, or only the totals (enough for a ranking, and much smaller). */
+    private bool $keeplines;
+
     /** @var array userid => list of line arrays. */
     private array $lines = [];
 
+    /** @var float[] userid => total points. */
+    private array $totals = [];
+
     /** @var int|null The earliest future time a hidden grade becomes visible, or null. */
     private ?int $nextchange = null;
+
+    /**
+     * Constructor.
+     *
+     * @param bool $keeplines False to keep only the totals.
+     */
+    public function __construct(bool $keeplines = true) {
+        $this->keeplines = $keeplines;
+    }
+
+    /**
+     * Whether the lines are kept, so a source can skip building them.
+     *
+     * @return bool
+     */
+    public function keeps_lines(): bool {
+        return $this->keeplines;
+    }
 
     /**
      * Add one line.
@@ -40,7 +64,20 @@ class result {
      * @param array $line The line.
      */
     public function add_line(int $userid, array $line): void {
-        $this->lines[$userid][] = $line;
+        $this->add_points($userid, (float) $line['points']);
+        if ($this->keeplines) {
+            $this->lines[$userid][] = $line;
+        }
+    }
+
+    /**
+     * Add points without a line, when lines are not kept.
+     *
+     * @param int $userid The user.
+     * @param float $points The points.
+     */
+    public function add_points(int $userid, float $points): void {
+        $this->totals[$userid] = ($this->totals[$userid] ?? 0.0) + $points;
     }
 
     /**
@@ -70,11 +107,7 @@ class result {
      * @return float[] userid => points.
      */
     public function get_totals(): array {
-        $totals = [];
-        foreach ($this->lines as $userid => $lines) {
-            $totals[$userid] = array_sum(array_column($lines, 'points'));
-        }
-        return $totals;
+        return $this->totals;
     }
 
     /**
@@ -92,9 +125,14 @@ class result {
      * @param result $other The other result.
      */
     public function merge(result $other): void {
-        foreach ($other->lines as $userid => $lines) {
-            foreach ($lines as $line) {
-                $this->add_line($userid, $line);
+        foreach ($other->totals as $userid => $points) {
+            $this->add_points($userid, $points);
+        }
+        if ($this->keeplines) {
+            foreach ($other->lines as $userid => $lines) {
+                foreach ($lines as $line) {
+                    $this->lines[$userid][] = $line;
+                }
             }
         }
         if ($other->nextchange !== null) {

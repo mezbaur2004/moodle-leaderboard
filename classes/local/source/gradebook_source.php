@@ -26,13 +26,16 @@ use mod_leaderboard\local\points_settings;
  *  - only activity grade items (itemtype 'mod') with numeric grades;
  *  - the activity must exist, be visible and not be in the middle of being deleted;
  *  - the grade item must not be hidden, and a "hidden until" date must have passed;
+ *  - the same for every grade category the item is in. Hiding a category in Moodle does
+ *    not hide quiz items inside it, or items added to it later, so categories are checked
+ *    here;
  *  - for quizzes with a "hidden until" date, every user or group override's close
  *    time must also have passed, so students with extra time are never shown how
- *    others scored while they are still sitting the quiz;
- *  - the individual grade must not be hidden, excluded or empty.
- *
- * Hiding a grade category hides the items inside it in Moodle, so categories need no
- * separate check.
+ *    others scored while they are still sitting the quiz. An override with no close
+ *    date holds the quiz back until it is removed or given one;
+ *  - the individual grade must not be hidden, excluded or empty;
+ *  - a student's grade does not count while access restrictions hide the activity
+ *    entirely from them, as the grade report does (see activity_access).
  *
  * @package    mod_leaderboard
  * @copyright  2026 Pedago Academy
@@ -52,39 +55,24 @@ class gradebook_source implements source {
     }
 
     #[\Override]
-    public function collect(int $courseid, string $usersql, array $userparams, points_settings $settings, int $now): result {
+    public function collect(
+        int $courseid,
+        string $usersql,
+        array $userparams,
+        points_settings $settings,
+        int $now,
+        bool $keeplines
+    ): result {
         global $DB, $CFG;
         require_once($CFG->libdir . '/grade/constants.php');
 
-        $result = new result();
+        $result = new result($keeplines);
 
         $items = $this->get_counted_items($courseid, $settings, $now, $result);
         if (!$items) {
             return $result;
         }
-
-        [$itemsql, $itemparams] = $DB->get_in_or_equal(array_keys($items), SQL_PARAMS_NAMED, 'lbitem');
-        $sql = "SELECT gg.id, gg.itemid, gg.userid, gg.finalgrade, gg.hidden
-                  FROM {grade_grades} gg
-                 WHERE gg.itemid $itemsql
-                   AND gg.finalgrade IS NOT NULL
-                   AND gg.excluded = 0
-                   AND gg.userid IN ($usersql)";
-        $grades = $DB->get_recordset_sql($sql, $itemparams + $userparams);
-
-        $visible = [];
-        foreach ($grades as $grade) {
-            $hidden = (int) $grade->hidden;
-            if ($hidden === 1) {
-                continue;
-            }
-            if ($hidden > 1 && $hidden > $now) {
-                $result->change_at($hidden);
-                continue;
-            }
-            $visible[] = $grade;
-        }
-        $grades->close();
+        $access = new activity_access($courseid, array_map('intval', array_column($items, 'cmid')), $now, $result);
 
         // Work out lateness only when it changes the points.
         $late = [];
@@ -100,26 +88,90 @@ class gradebook_source implements source {
             }
         }
 
-        foreach ($visible as $grade) {
+        [$itemsql, $itemparams] = $DB->get_in_or_equal(array_keys($items), SQL_PARAMS_NAMED, 'lbitem');
+        $sql = "SELECT gg.id, gg.itemid, gg.userid, gg.finalgrade, gg.hidden
+                  FROM {grade_grades} gg
+                 WHERE gg.itemid $itemsql
+                   AND gg.finalgrade IS NOT NULL
+                   AND gg.excluded = 0
+                   AND gg.userid IN ($usersql)";
+        $grades = $DB->get_recordset_sql($sql, $itemparams + $userparams);
+
+        // Grades are added as they are read, so a large course never holds them all in memory.
+        // Only grades of restricted activities wait, to be checked one student at a time.
+        $restricted = [];
+        foreach ($grades as $grade) {
+            $hidden = (int) $grade->hidden;
+            if ($hidden === 1) {
+                continue;
+            }
+            if ($hidden > 1 && $hidden > $now) {
+                $result->change_at($hidden);
+                continue;
+            }
             $item = $items[$grade->itemid];
-            $islate = $item->itemmodule === 'assign' && !empty($late[$item->iteminstance][$grade->userid]);
-            $permark = $settings->per_mark($item->itemmodule, $islate);
-            $mark = max(0.0, (float) $grade->finalgrade);
-            $result->add_line((int) $grade->userid, [
-                'source' => 'gradebook',
-                'itemid' => (int) $item->id,
-                'cmid' => (int) $item->cmid,
-                'modname' => $item->itemmodule,
-                'name' => (string) $item->itemname,
-                'mark' => $mark,
-                'grademax' => (float) $item->grademax,
-                'late' => $islate,
-                'permark' => $permark,
-                'points' => $mark * $permark,
-            ]);
+            if ($access->is_restricted((int) $item->cmid)) {
+                $restricted[] = [(int) $grade->userid, (int) $grade->itemid, (float) $grade->finalgrade];
+                continue;
+            }
+            $this->add($result, $item, (int) $grade->userid, (float) $grade->finalgrade, $late, $settings);
+        }
+        $grades->close();
+
+        // By student, so a student's course information is built at most once.
+        usort($restricted, fn($a, $b) => $a[0] <=> $b[0]);
+        $byactivity = [];
+        foreach ($restricted as [$userid, $itemid]) {
+            $byactivity[(int) $items[$itemid]->cmid][] = $userid;
+        }
+        $access->preload($byactivity);
+        foreach ($restricted as [$userid, $itemid, $finalgrade]) {
+            $item = $items[$itemid];
+            if (!$access->is_hidden_from((int) $item->cmid, $userid)) {
+                $this->add($result, $item, $userid, $finalgrade, $late, $settings);
+            }
         }
 
         return $result;
+    }
+
+    /**
+     * Add the points for one grade.
+     *
+     * @param result $result Where to add them.
+     * @param \stdClass $item The grade item.
+     * @param int $userid The student.
+     * @param float $finalgrade The grade.
+     * @param array $late assignid => [userid => true] for late work.
+     * @param points_settings $settings Points per mark.
+     */
+    private function add(
+        result $result,
+        \stdClass $item,
+        int $userid,
+        float $finalgrade,
+        array $late,
+        points_settings $settings
+    ): void {
+        $islate = $item->itemmodule === 'assign' && !empty($late[$item->iteminstance][$userid]);
+        $permark = $settings->per_mark($item->itemmodule, $islate);
+        $mark = max(0.0, $finalgrade);
+        if (!$result->keeps_lines()) {
+            $result->add_points($userid, $mark * $permark);
+            return;
+        }
+        $result->add_line($userid, [
+            'source' => 'gradebook',
+            'itemid' => (int) $item->id,
+            'cmid' => (int) $item->cmid,
+            'modname' => $item->itemmodule,
+            'name' => (string) $item->itemname,
+            'mark' => $mark,
+            'grademax' => (float) $item->grademax,
+            'late' => $islate,
+            'permark' => $permark,
+            'points' => $mark * $permark,
+        ]);
     }
 
     /**
@@ -135,7 +187,7 @@ class gradebook_source implements source {
         global $DB;
 
         $sql = "SELECT gi.id, gi.itemmodule, gi.iteminstance, gi.itemnumber, gi.itemname, gi.grademax,
-                       gi.hidden, cm.id AS cmid
+                       gi.hidden, gi.categoryid, cm.id AS cmid
                   FROM {grade_items} gi
                   JOIN {modules} m ON m.name = gi.itemmodule
                   JOIN {course_modules} cm ON cm.course = gi.courseid
@@ -149,12 +201,19 @@ class gradebook_source implements source {
                    AND cm.deletioninprogress = 0
               ORDER BY gi.sortorder, gi.id";
         $records = $DB->get_records_sql($sql, ['courseid' => $courseid, 'gradetype' => GRADE_TYPE_VALUE]);
+        if (!$records) {
+            return [];
+        }
+        $categories = $DB->get_records('grade_categories', ['courseid' => $courseid], '', 'id, path, hidden');
 
         $items = [];
         $quizreveals = [];
         foreach ($records as $item) {
             $modname = $item->itemmodule;
             if (in_array($modname, $this->excludedmodules, true) || !$settings->counts($modname)) {
+                continue;
+            }
+            if (!self::is_category_visible($categories, (int) $item->categoryid, $now, $result)) {
                 continue;
             }
             $hidden = (int) $item->hidden;
@@ -174,27 +233,62 @@ class gradebook_source implements source {
         // Quizzes whose marks are hidden until the close date: wait for every override too.
         if ($quizreveals) {
             [$quizsql, $quizparams] = $DB->get_in_or_equal(array_keys($quizreveals), SQL_PARAMS_NAMED, 'lbquiz');
-            $closes = $DB->get_records_sql_menu(
-                "SELECT quiz, MAX(timeclose)
+            $closes = $DB->get_records_sql(
+                "SELECT quiz, MIN(timeclose) AS firstclose, MAX(timeclose) AS lastclose
                    FROM {quiz_overrides}
                   WHERE quiz $quizsql AND timeclose IS NOT NULL
                GROUP BY quiz",
                 $quizparams
             );
-            foreach ($closes as $quizid => $lastclose) {
-                $lastclose = (int) $lastclose;
-                if ($lastclose <= $now) {
+            foreach ($closes as $quizid => $close) {
+                // A close time of 0 means that student or group has no close date at all.
+                $neverclosed = (int) $close->firstclose === 0;
+                $lastclose = (int) $close->lastclose;
+                if (!$neverclosed && $lastclose <= $now) {
                     continue;
                 }
                 foreach ($quizreveals[$quizid] as $itemid) {
                     if (isset($items[$itemid])) {
                         unset($items[$itemid]);
-                        $result->change_at($lastclose);
+                        if (!$neverclosed) {
+                            $result->change_at($lastclose);
+                        }
                     }
                 }
             }
         }
 
         return $items;
+    }
+
+    /**
+     * Whether a grade category and every category above it are visible.
+     *
+     * @param array $categories id => grade category record (id, path, hidden) for the course.
+     * @param int $categoryid The item's category.
+     * @param int $now The current time.
+     * @param result $result Collects the next time a hidden category becomes visible.
+     * @return bool
+     */
+    private static function is_category_visible(array $categories, int $categoryid, int $now, result $result): bool {
+        if (!isset($categories[$categoryid])) {
+            return true;
+        }
+        $path = (string) $categories[$categoryid]->path;
+        $ids = $path !== '' ? array_filter(explode('/', $path)) : [$categoryid];
+        foreach ($ids as $id) {
+            if (!isset($categories[$id])) {
+                continue;
+            }
+            $hidden = (int) $categories[$id]->hidden;
+            if ($hidden === 1) {
+                return false;
+            }
+            if ($hidden > 1 && $hidden > $now) {
+                $result->change_at($hidden);
+                return false;
+            }
+        }
+        return true;
     }
 }

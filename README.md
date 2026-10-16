@@ -45,15 +45,21 @@ A grade counts only when:
 
 * the activity is visible and not being deleted;
 * its grade item is not hidden, and any "hidden until" date has passed;
+* no grade category it is in is hidden (or hidden until a later date);
 * for quizzes whose marks are hidden until the close date: every user or group override's
-  close date has passed too, so students with extra time never see others' scores early;
-* the student's own grade is not hidden, excluded or empty.
+  close date has passed too, so students with extra time never see others' scores early. An
+  override with no close date holds the quiz back until it is removed or given one;
+* the student's own grade is not hidden, excluded or empty;
+* access restrictions do not hide the activity entirely from that student (as in the user
+  grade report: a restriction shown greyed out with its reason does not hide the grade).
 
 **Late assignments.** An assignment is late when it was submitted after the student's own due
 date: their extension if they have one, otherwise their user or group override, otherwise the
-assignment's due date. This is the same rule the assignment grading table uses. Team
-assignments use the team's submission. Assignments without a due date, or graded without an
-online submission, are never late.
+assignment's due date (moved by the student's start date in a course with relative dates).
+This is the same rule the assignment grading table uses. Team assignments use the team's
+submission. With several attempts, the attempt whose grade is in the gradebook decides, so a
+reopened attempt the student is still working on does not change it. Assignments without a
+due date, or graded without an online submission, are never late.
 
 **Who is ranked.** Users actively enrolled in the course who have the capability
 `mod/leaderboard:beranked` (the student role by default). Teachers are not ranked. With
@@ -91,6 +97,10 @@ created), the number of students shown, and whether a summary appears on the cou
 > activity with a maximum grade of 100 would give 200 points per click. Keep Zoom's maximum
 > grade small (for example 1 to 5), or lower the Zoom points per mark.
 
+> **Anonymous mode and groups.** Anonymous mode hides names, but the points stay the same in
+> every group's leaderboard. If students can switch between overlapping groups (visible groups,
+> or several groups each), comparing two groups can reveal who has which points.
+
 > **Activity name links.** If the "Activity names auto-linking" filter is on, every place the
 > leaderboard's name appears in course text becomes a link. That is why the default name is
 > "Course leaderboard" rather than "Leaderboard".
@@ -124,9 +134,14 @@ moves teachers' welcome text down.
 |---|---|
 | Course form, CSV upload, course request, data generators | Added at the end of course creation |
 | Created inside a database transaction (for example the create courses web service) | Added by a background task right after, on the next cron run |
-| Restore as a new course, course copy | Added, unless the backup already has a leaderboard, or it is a copy of a course on this site whose leaderboard was deleted |
-| Import into a course, or CSV upload with a template course | If that brings a second leaderboard, one is removed again |
-| Teacher deletes the leaderboard | Remembered; it is never added back |
+| Restore as a new course, course copy | Added, unless the backup already has a leaderboard, or it is a copy (or a copy of a copy) of a course on this site whose leaderboard was deleted |
+| Course restored from the recycle bin | Keeps its own leaderboard, or none if its leaderboard had been deleted |
+| Import or restore into an existing course | If that brings a second leaderboard, the one brought in is removed. When the course's own leaderboard was added automatically in the same step (CSV upload with a template course), the one brought in replaces it, at the top |
+| Restore that deletes the course contents first | The restored leaderboard is used, or a new one is added |
+| Teacher deletes the leaderboard | Remembered, also after the course is deleted; it is never added back. This also applies before the backfill has run |
+
+Leaderboards this plugin removes as duplicates skip the course recycle bin. Automatically added
+leaderboards use the course's default group mode and grouping.
 
 Only managers can add a leaderboard by hand (`mod/leaderboard:addinstance`), and a course can
 only have one.
@@ -136,10 +151,15 @@ only have one.
 The plugin supports the official Moodle app (and branded apps):
 
 * tapping the activity opens the full leaderboard, with "your points" underneath; pull down to refresh;
-* the course page shows the top 3 and the student's own place.
+* the course page shows the top 3 and the student's own place, with the time the ranking was
+  calculated.
 
-The app caches content for about 20 minutes. After installing or upgrading the plugin, purge
-Moodle's caches; app users may need to log out and in again to see the new pages.
+The app caches content for about 20 minutes. Pulling down the course page does not refresh the
+summary there; opening the full leaderboard does. After installing or upgrading the plugin,
+purge Moodle's caches; app users may need to log out and in again to see the new pages.
+
+On Moodle 5.2 and later the website's "previous / next activity" links skip the leaderboard;
+the app's own previous / next buttons still include it.
 
 ## For developers
 

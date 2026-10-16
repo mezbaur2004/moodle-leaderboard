@@ -32,7 +32,7 @@
         <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
         <FIELD NAME="cmid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The course module the provisioner added or found. 0 when nothing was added."/>
         <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" COMMENT="added, existing, removed, inheritedremoved or skipped."/>
-        <FIELD NAME="origin" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="What started provisioning: create, restore, task or backfill."/>
+        <FIELD NAME="origin" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" COMMENT="What started provisioning: create, restore, task, backfill or delete."/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
         <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
       </FIELDS>
