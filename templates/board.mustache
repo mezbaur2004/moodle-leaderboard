@@ -1,0 +1,106 @@
+{{!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+}}
+{{!
+    @template mod_leaderboard/board
+
+    The full leaderboard on the activity page.
+
+    Example context (json):
+    {
+        "showboard": true,
+        "nogroup": false,
+        "empty": false,
+        "toofew": false,
+        "rows": [
+            {"rank": 1, "points": "240", "name": "Rahim Uddin", "picture": "", "isme": false, "istop": true,
+             "medal": "Gold", "breakdownurl": null},
+            {"rank": 2, "points": "198", "name": "Nusrat Jahan", "picture": "", "isme": true, "istop": true,
+             "medal": "Silver", "breakdownurl": "https://example.com/mod/leaderboard/view.php?id=12&userid=5"}
+        ],
+        "me": {"rank": 2, "points": "198", "total": 48, "text": "You are #2 of 48 with 198 points"},
+        "meoutside": false,
+        "merow": null,
+        "showall": false,
+        "shown": 2,
+        "total": 48,
+        "updated": "16/10/26, 10:30",
+        "rules": [{"label": "Assignment, on time", "value": "2 points per mark"}]
+    }
+}}
+<div class="mod-leaderboard-board" data-region="mod-leaderboard-board">
+    {{#me}}
+    <div class="mod-leaderboard-mycard card mb-3">
+        <div class="card-body d-flex align-items-center">
+            <span class="mod-leaderboard-rank mod-leaderboard-rank-{{rank}} me-3">{{rank}}</span>
+            <div>
+                <div class="h5 mb-0">{{text}}</div>
+            </div>
+        </div>
+    </div>
+    {{/me}}
+
+    {{#showboard}}
+    <table class="table generaltable mod-leaderboard-table">
+        <caption class="visually-hidden">{{#str}}ranking, mod_leaderboard{{/str}}</caption>
+        <thead>
+            <tr>
+                <th scope="col" class="mod-leaderboard-col-rank">{{#str}}rank, mod_leaderboard{{/str}}</th>
+                <th scope="col">{{#str}}student, mod_leaderboard{{/str}}</th>
+                <th scope="col" class="text-end">{{#str}}points, mod_leaderboard{{/str}}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{#rows}}
+            {{> mod_leaderboard/board_row }}
+            {{/rows}}
+            {{#meoutside}}
+            <tr class="mod-leaderboard-gap" aria-hidden="true"><td colspan="3">&hellip;</td></tr>
+            {{#merow}}
+            {{> mod_leaderboard/board_row }}
+            {{/merow}}
+            {{/meoutside}}
+        </tbody>
+    </table>
+    <p class="text-muted small">
+        {{#showall}}{{#str}}showingall, mod_leaderboard, {{total}}{{/str}}{{/showall}}
+        {{^showall}}{{#str}}showingtop, mod_leaderboard, { "shown": {{shown}}, "total": {{total}} }{{/str}}{{/showall}}
+        &middot; {{#str}}lastupdated, mod_leaderboard, {{updated}}{{/str}}
+    </p>
+    {{/showboard}}
+
+    {{#nogroup}}
+    <div class="alert alert-info">{{#str}}nogroup, mod_leaderboard{{/str}}</div>
+    {{/nogroup}}
+    {{#empty}}
+    <div class="alert alert-info">{{#str}}nostudents, mod_leaderboard{{/str}}</div>
+    {{/empty}}
+    {{#toofew}}
+    <div class="alert alert-info">{{#str}}toofew, mod_leaderboard{{/str}}</div>
+    {{/toofew}}
+
+    {{#rules.0}}
+    <details class="mod-leaderboard-rules mt-3">
+        <summary>{{#str}}howitworks, mod_leaderboard{{/str}}</summary>
+        <ul class="mt-2">
+            {{#rules}}
+            <li>{{label}}: {{value}}</li>
+            {{/rules}}
+        </ul>
+        <p class="mb-0">{{#str}}howitworks_desc, mod_leaderboard{{/str}}</p>
+    </details>
+    {{/rules.0}}
+</div>

@@ -1,0 +1,109 @@
+{{=<% %>=}}
+<%!
+    This file is part of Moodle - http://moodle.org/
+
+    Moodle is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    Moodle is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with Moodle.  If not, see <http://www.gnu.org/licenses/>.
+%>
+<%!
+    @template mod_leaderboard/mobile_view
+
+    The leaderboard page in the Moodle app. Rendered by Moodle, then compiled by the app
+    (Angular). Names and activity names are wrapped in ngNonBindable so that text such as
+    "{{ }}" in them is never treated as app template code.
+
+    Example context (json):
+    {
+        "showboard": true, "nogroup": false, "empty": false, "toofew": false,
+        "rows": [{"rank": 1, "points": "240", "name": "Rahim Uddin", "isme": false}],
+        "me": {"text": "You are #2 of 48 with 198 points"},
+        "meoutside": false, "merow": null,
+        "updatedtext": "Updated 16/10/26, 10:30",
+        "breakdown": {"title": "Your points", "hasrows": true, "total": "110",
+            "rows": [{"name": "Essay 1", "type": "Assignment", "mark": "40", "grademax": "50",
+                      "permark": "2", "late": false, "points": "80"}]}
+    }
+%>
+<div class="mod-leaderboard-mobile">
+    <%#me%>
+    <ion-card>
+        <ion-card-content>
+            <p class="item-heading"><strong ngNonBindable><% text %></strong></p>
+        </ion-card-content>
+    </ion-card>
+    <%/me%>
+
+    <%#showboard%>
+    <ion-list>
+        <%#rows%>
+        <ion-item class="<%#isme%>mod-leaderboard-isme<%/isme%>">
+            <ion-badge slot="start" color="<%#isme%>primary<%/isme%><%^isme%>medium<%/isme%>"><% rank %></ion-badge>
+            <ion-label>
+                <p class="item-heading" ngNonBindable><% name %></p>
+            </ion-label>
+            <ion-note slot="end" ngNonBindable><% points %></ion-note>
+        </ion-item>
+        <%/rows%>
+        <%#meoutside%>
+        <%#merow%>
+        <ion-item class="mod-leaderboard-isme">
+            <ion-badge slot="start" color="primary"><% rank %></ion-badge>
+            <ion-label>
+                <p class="item-heading" ngNonBindable><% name %></p>
+            </ion-label>
+            <ion-note slot="end" ngNonBindable><% points %></ion-note>
+        </ion-item>
+        <%/merow%>
+        <%/meoutside%>
+    </ion-list>
+    <%/showboard%>
+
+    <%#nogroup%>
+    <ion-card><ion-card-content><p>{{ 'plugin.mod_leaderboard.nogroup' | translate }}</p></ion-card-content></ion-card>
+    <%/nogroup%>
+    <%#empty%>
+    <ion-card><ion-card-content><p>{{ 'plugin.mod_leaderboard.nostudents' | translate }}</p></ion-card-content></ion-card>
+    <%/empty%>
+    <%#toofew%>
+    <ion-card><ion-card-content><p>{{ 'plugin.mod_leaderboard.toofew' | translate }}</p></ion-card-content></ion-card>
+    <%/toofew%>
+
+    <%#breakdown%>
+    <ion-list>
+        <ion-list-header>
+            <ion-label><h2 ngNonBindable><% title %></h2></ion-label>
+        </ion-list-header>
+        <%#rows%>
+        <ion-item>
+            <ion-label>
+                <p class="item-heading" ngNonBindable><% name %></p>
+                <p ngNonBindable><% type %> &middot; <% mark %> / <% grademax %> &times; <% permark %><%#late%> &middot; {{ 'plugin.mod_leaderboard.late' | translate }}<%/late%></p>
+            </ion-label>
+            <ion-note slot="end" ngNonBindable><% points %></ion-note>
+        </ion-item>
+        <%/rows%>
+        <%#hasrows%>
+        <ion-item>
+            <ion-label><p class="item-heading">{{ 'plugin.mod_leaderboard.total' | translate }}</p></ion-label>
+            <ion-note slot="end" ngNonBindable><strong><% total %></strong></ion-note>
+        </ion-item>
+        <%/hasrows%>
+        <%^hasrows%>
+        <ion-item><ion-label><p>{{ 'plugin.mod_leaderboard.nopointsyet' | translate }}</p></ion-label></ion-item>
+        <%/hasrows%>
+    </ion-list>
+    <%/breakdown%>
+
+    <p class="ion-text-center ion-padding-horizontal"><small ngNonBindable><% updatedtext %></small></p>
+    <p class="ion-text-center ion-padding-horizontal"><small>{{ 'plugin.mod_leaderboard.mobile_pulltorefresh' | translate }}</small></p>
+</div>

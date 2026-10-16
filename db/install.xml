@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="mod/leaderboard/db" VERSION="20261016" COMMENT="XMLDB file for Moodle mod/leaderboard"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd"
+>
+  <TABLES>
+    <TABLE NAME="leaderboard" COMMENT="One row per leaderboard activity. Rankings are calculated from the gradebook, so no per-user data is stored here.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="course" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="intro" TYPE="text" NOTNULL="false" SEQUENCE="false"/>
+        <FIELD NAME="introformat" TYPE="int" LENGTH="4" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="assignpoints" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="2" SEQUENCE="false" COMMENT="Points per assignment mark when submitted on time."/>
+        <FIELD NAME="assignlatepoints" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="1" SEQUENCE="false" COMMENT="Points per assignment mark when submitted after the student's due date."/>
+        <FIELD NAME="quizpoints" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="2" SEQUENCE="false" COMMENT="Points per quiz mark."/>
+        <FIELD NAME="zoompoints" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="2" SEQUENCE="false" COMMENT="Points per Zoom mark (as written to the gradebook by mod_zoom)."/>
+        <FIELD NAME="otherpoints" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Points per mark for every other graded activity type. 0 means they do not count."/>
+        <FIELD NAME="topn" TYPE="int" LENGTH="5" NOTNULL="true" DEFAULT="10" SEQUENCE="false" COMMENT="How many top students the full leaderboard shows. 0 shows everyone."/>
+        <FIELD NAME="showinline" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false" COMMENT="1 to show a short summary on the course page."/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="course" TYPE="foreign" FIELDS="course" REFTABLE="course" REFFIELDS="id"/>
+      </KEYS>
+    </TABLE>
+    <TABLE NAME="leaderboard_provision" COMMENT="One row per course the automatic provisioner has handled, so a leaderboard a teacher deleted is never added back.">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="false"/>
+        <FIELD NAME="cmid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="The course module the provisioner added or found. 0 when nothing was added."/>
+        <FIELD NAME="status" TYPE="char" LENGTH="20" NOTNULL="true" SEQUENCE="false" COMMENT="added, existing, removed, inheritedremoved or skipped."/>
+        <FIELD NAME="origin" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="" SEQUENCE="false" COMMENT="What started provisioning: create, restore, task or backfill."/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" SEQUENCE="false"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="courseid" TYPE="foreign-unique" FIELDS="courseid" REFTABLE="course" REFFIELDS="id"/>
+      </KEYS>
+    </TABLE>
+  </TABLES>
+</XMLDB>
