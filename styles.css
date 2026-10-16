@@ -1,0 +1,69 @@
+/* Rank badges, shared by the summary and the full page. */
+.mod-leaderboard-rank {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.75rem;
+    height: 1.75rem;
+    padding: 0 0.35rem;
+    border-radius: 0.875rem;
+    font-weight: 700;
+    font-size: 0.875rem;
+    background-color: var(--bs-secondary-bg, #e9ecef);
+    color: var(--bs-body-color, #1d2125);
+}
+
+.mod-leaderboard-rank-1 {
+    background-color: #f5c518;
+    color: #1d2125;
+}
+
+.mod-leaderboard-rank-2 {
+    background-color: #c0c6cc;
+    color: #1d2125;
+}
+
+.mod-leaderboard-rank-3 {
+    background-color: #d39a62;
+    color: #1d2125;
+}
+
+/* Course page summary. */
+.mod-leaderboard-summary {
+    max-width: 32rem;
+    margin-top: 0.5rem;
+}
+
+.mod-leaderboard-summary-row {
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+}
+
+.mod-leaderboard-summary-row.mod-leaderboard-isme .mod-leaderboard-name {
+    font-weight: 700;
+}
+
+.mod-leaderboard-points {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* Full page. */
+.mod-leaderboard-table .mod-leaderboard-col-rank {
+    width: 5rem;
+}
+
+.mod-leaderboard-table td {
+    vertical-align: middle;
+}
+
+.mod-leaderboard-gap td {
+    text-align: center;
+    color: var(--bs-secondary-color, #6a737b);
+    padding: 0.1rem;
+}
+
+.mod-leaderboard-rules summary {
+    cursor: pointer;
+    font-weight: 600;
+}
