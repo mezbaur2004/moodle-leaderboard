@@ -52,8 +52,9 @@ class mobile {
                 'id' => 'main',
                 'html' => $OUTPUT->render_from_template('mod_leaderboard/mobile_view', $data),
             ]],
-            // Refresh the course page summary whenever the student opens the full page.
-            'javascript' => 'if (this.updateModuleCourseContent) { this.updateModuleCourseContent(' . (int) $cm->id . ', true); }',
+            // Refresh the course page summary whenever the student opens the full page. The second
+            // argument (alreadyFetched) is left out on purpose: true would make the app reuse its cache.
+            'javascript' => 'if (this.updateModuleCourseContent) { this.updateModuleCourseContent(' . (int) $cm->id . '); }',
         ];
     }
 
