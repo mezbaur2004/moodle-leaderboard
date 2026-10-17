@@ -30,7 +30,7 @@ class backup_leaderboard_activity_structure_step extends backup_activity_structu
     protected function define_structure() {
         $leaderboard = new backup_nested_element('leaderboard', ['id'], [
             'name', 'intro', 'introformat',
-            'assignpoints', 'assignlatepoints', 'quizpoints', 'zoompoints', 'otherpoints',
+            'assignpoints', 'assignlatepoints', 'quizpoints', 'zoompoints', 'zoomsource', 'zoomattendpoints', 'otherpoints',
             'topn', 'showinline', 'timecreated', 'timemodified',
         ]);
 

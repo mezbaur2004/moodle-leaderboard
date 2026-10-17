@@ -51,6 +51,15 @@ class mod_leaderboard_mod_form extends moodleform_mod {
             $mform->addElement('static', 'lockedinfo', '', get_string('pointslocked', 'leaderboard'));
         }
         $site = points_settings::site();
+        $mform->addElement('select', 'zoomsource', get_string('zoomsource', 'leaderboard'), [
+            points_settings::ZOOM_GRADEBOOK => get_string('zoomsource_gradebook', 'leaderboard'),
+            points_settings::ZOOM_ATTENDANCE => get_string('zoomsource_attendance', 'leaderboard'),
+        ]);
+        $mform->setDefault('zoomsource', $site->get_zoom_source());
+        $mform->addHelpButton('zoomsource', 'zoomsource', 'leaderboard');
+        if ($locked) {
+            $mform->freeze('zoomsource');
+        }
         foreach (points_settings::FIELDS as $field => $unused) {
             $mform->addElement('text', $field, get_string($field, 'leaderboard'), ['size' => 6]);
             $mform->setType($field, PARAM_RAW_TRIMMED);
@@ -60,6 +69,9 @@ class mod_leaderboard_mod_form extends moodleform_mod {
                 $mform->freeze($field);
             }
         }
+        // Only the Zoom rate that applies is shown.
+        $mform->hideIf('zoompoints', 'zoomsource', 'eq', points_settings::ZOOM_ATTENDANCE);
+        $mform->hideIf('zoomattendpoints', 'zoomsource', 'eq', points_settings::ZOOM_GRADEBOOK);
 
         // Display.
         $mform->addElement('header', 'displayheading', get_string('settings_display', 'leaderboard'));
@@ -84,6 +96,7 @@ class mod_leaderboard_mod_form extends moodleform_mod {
         $site = points_settings::site();
         foreach (points_settings::FIELDS as $field => $unused) {
             if (points_settings::is_locked()) {
+                $defaultvalues['zoomsource'] = $site->get_zoom_source();
                 $defaultvalues[$field] = format_float($site->get($field), 2, true, true);
             } else if (isset($defaultvalues[$field])) {
                 $defaultvalues[$field] = format_float((float) $defaultvalues[$field], 2, true, true);

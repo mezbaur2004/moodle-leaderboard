@@ -19,6 +19,7 @@ namespace mod_leaderboard\local;
 use mod_leaderboard\local\source\gradebook_source;
 use mod_leaderboard\local\source\result;
 use mod_leaderboard\local\source\source;
+use mod_leaderboard\local\source\zoom_attendance_source;
 
 /**
  * Calculates rankings and point breakdowns for one leaderboard.
@@ -71,6 +72,8 @@ class ranking_builder {
         return sha1(json_encode([
             $this->settings->to_array(),
             (int) $this->leaderboard->timemodified,
+            // Attendance changes fire no event the leaderboard can observe; its data version changes instead.
+            $this->settings->uses_zoom_attendance() ? zoom_attendance_source::data_version((int) $this->cm->course) : '',
         ]));
     }
 
@@ -220,12 +223,15 @@ class ranking_builder {
     /**
      * The point sources in use.
      *
-     * Version 1 reads everything from the gradebook. A later version can add a Zoom
-     * attendance source here and pass ['zoom'] to the gradebook source to exclude it.
+     * Everything comes from the gradebook, unless Zoom points come from local_zoomattendance:
+     * then Zoom grades are left out of the gradebook, so Zoom is not counted twice.
      *
      * @return source[]
      */
     private function get_sources(): array {
+        if ($this->settings->uses_zoom_attendance()) {
+            return [new gradebook_source(['zoom']), new zoom_attendance_source()];
+        }
         return [new gradebook_source()];
     }
 }

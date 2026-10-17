@@ -25,8 +25,8 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'mod_leaderboard';
-$plugin->version   = 2026101601;
+$plugin->version   = 2026101700;
 $plugin->requires  = 2025041400; // Moodle 5.0.
 $plugin->supported = [500, 503];
 $plugin->maturity  = MATURITY_BETA;
-$plugin->release   = '0.1.1';
+$plugin->release   = '0.2.0';
