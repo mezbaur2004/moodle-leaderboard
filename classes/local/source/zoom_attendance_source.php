@@ -68,40 +68,98 @@ class zoom_attendance_source implements source {
         }
         $access = new activity_access($courseid, array_keys($cms), $now, $result);
 
-        // Users with a result, by activity, so access restrictions can be checked in one go.
         $points = [];
         foreach ($cms as $cmid => $cm) {
-            $attendance = new attendance($cm);
-            if (!$attendance->instance || empty($attendance->settings->enabled)) {
+            try {
+                $activity = $this->read_activity($cm, $userset, $keeplines);
+            } catch (\Throwable $e) {
+                // One broken Zoom activity (for example a missing Zoom record) must not break the leaderboard.
+                debugging('mod_leaderboard: could not read Zoom attendance of course module ' . $cmid . ': '
+                    . $e->getMessage(), DEBUG_DEVELOPER);
                 continue;
             }
-            $classes = [];
-            foreach ($attendance->get_occurrences() as $occurrence) {
-                if ($attendance->state($occurrence) !== attendance::STATE_EVALUATED) {
-                    continue;
-                }
-                $denominator = $attendance->settings->denominator_for($occurrence);
-                if ($denominator > 0) {
-                    $classes[(int) $occurrence->id] = [$occurrence, $denominator];
-                }
+            if ($activity) {
+                $points[$cmid] = $activity;
             }
-            if (!$classes) {
+        }
+        return $this->add_points($result, $points, $userset, $access, $perpercent, $keeplines);
+    }
+
+    /**
+     * Read one Zoom activity's evaluated classes and who attended them.
+     *
+     * @param \cm_info $cm The Zoom activity.
+     * @param array $userset userid => index, the users to read.
+     * @param bool $keeplines Whether this is a breakdown.
+     * @return array|null [cm, classes, attended, expected], or null when nothing counts.
+     */
+    private function read_activity(\cm_info $cm, array $userset, bool $keeplines): ?array {
+        $attendance = new attendance($cm);
+        if (!$attendance->instance || empty($attendance->settings->enabled)) {
+            return null;
+        }
+        $classes = [];
+        foreach ($attendance->get_occurrences() as $occurrence) {
+            if ($attendance->state($occurrence) !== attendance::STATE_EVALUATED) {
                 continue;
             }
-            $attended = [];
-            foreach ($attendance->get_results(array_keys($classes)) as $occurrenceid => $rows) {
-                foreach ($rows as $row) {
-                    $userid = (int) $row->userid;
-                    if ($userid && isset($userset[$userid])) {
-                        $attended[$occurrenceid][$userid] = max($attended[$occurrenceid][$userid] ?? 0, (int) $row->attendedsecs);
+            $denominator = $attendance->settings->denominator_for($occurrence);
+            if ($denominator > 0) {
+                $classes[(int) $occurrence->id] = [$occurrence, $denominator];
+            }
+        }
+        if (!$classes) {
+            return null;
+        }
+        // A breakdown is for one student: read only their rows.
+        $single = count($userset) === 1 ? (int) array_key_first($userset) : null;
+        $attended = [];
+        foreach ($attendance->get_results(array_keys($classes), $single) as $occurrenceid => $rows) {
+            foreach ($rows as $row) {
+                $userid = (int) $row->userid;
+                if ($userid && isset($userset[$userid])) {
+                    $attended[$occurrenceid][$userid] = max($attended[$occurrenceid][$userid] ?? 0, (int) $row->attendedsecs);
+                }
+            }
+        }
+        // A breakdown lists missed classes too, but only those the student was expected at
+        // (enrolled at the time), as the attendance report does.
+        $expected = [];
+        if ($keeplines) {
+            $candidates = $attendance->get_candidates(0, array_keys($userset));
+            foreach ($classes as $occurrenceid => [$occurrence]) {
+                foreach ($candidates as $userid => $candidate) {
+                    if ($attendance->is_expected($candidate, $occurrence)) {
+                        $expected[$occurrenceid][(int) $userid] = 0;
                     }
                 }
             }
-            $points[$cmid] = [$cm, $classes, $attended];
         }
+        return [$cm, $classes, $attended, $expected];
+    }
 
+    /**
+     * Add the points of the classes read, after the access checks.
+     *
+     * @param result $result Where to add them.
+     * @param array $points cmid => what read_activity() returned.
+     * @param array $userset userid => index, the users read.
+     * @param activity_access $access Access restriction checks.
+     * @param float $perpercent Points per percent attended.
+     * @param bool $keeplines Whether this is a breakdown.
+     * @return result
+     */
+    private function add_points(
+        result $result,
+        array $points,
+        array $userset,
+        activity_access $access,
+        float $perpercent,
+        bool $keeplines
+    ): result {
+        // Users with a result, by activity, so access restrictions can be checked in one go.
         $byactivity = [];
-        foreach ($points as $cmid => [, , $attended]) {
+        foreach ($points as $cmid => [, , $attended, ]) {
             foreach ($attended as $users) {
                 foreach (array_keys($users) as $userid) {
                     $byactivity[$cmid][] = $userid;
@@ -110,13 +168,9 @@ class zoom_attendance_source implements source {
         }
         $access->preload($byactivity);
 
-        foreach ($points as $cmid => [$cm, $classes, $attended]) {
+        foreach ($points as $cmid => [$cm, $classes, $attended, $expected]) {
             foreach ($classes as $occurrenceid => [$occurrence, $denominator]) {
-                // A breakdown also lists the classes the student missed, at 0 points.
-                $users = $attended[$occurrenceid] ?? [];
-                if ($keeplines) {
-                    $users += array_fill_keys(array_keys($userset), 0);
-                }
+                $users = ($attended[$occurrenceid] ?? []) + ($expected[$occurrenceid] ?? []);
                 foreach ($users as $userid => $secs) {
                     if ($access->is_hidden_from($cmid, $userid)) {
                         continue;

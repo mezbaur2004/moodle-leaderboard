@@ -74,7 +74,9 @@ class points_settings {
      * @return bool
      */
     public static function attendance_available(): bool {
-        return class_exists(\local_zoomattendance\local\attendance::class);
+        // Version 0.5.0 (2026100700) has the attendance API this plugin uses.
+        return class_exists(\local_zoomattendance\local\attendance::class)
+            && (int) get_config('local_zoomattendance', 'version') >= 2026100700;
     }
 
     /**
