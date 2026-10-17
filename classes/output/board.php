@@ -315,9 +315,17 @@ class board {
             if ($field === 'otherpoints' && $value <= 0) {
                 continue;
             }
+            // Only the Zoom rate that applies.
+            if ($field === ($settings->uses_zoom_attendance() ? 'zoompoints' : 'zoomattendpoints')) {
+                continue;
+            }
             $rules[] = [
                 'label' => get_string($field . '_rule', 'leaderboard'),
-                'value' => get_string('pointspermark', 'leaderboard', self::format_number($value)),
+                'value' => get_string(
+                    $field === 'zoomattendpoints' ? 'pointsperpercent' : 'pointspermark',
+                    'leaderboard',
+                    self::format_number($value)
+                ),
             ];
         }
         return $rules;

@@ -15,6 +15,8 @@
         <FIELD NAME="assignlatepoints" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="1" SEQUENCE="false" COMMENT="Points per assignment mark when submitted after the student's due date."/>
         <FIELD NAME="quizpoints" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="2" SEQUENCE="false" COMMENT="Points per quiz mark."/>
         <FIELD NAME="zoompoints" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="2" SEQUENCE="false" COMMENT="Points per Zoom mark (as written to the gradebook by mod_zoom)."/>
+        <FIELD NAME="zoomsource" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="gradebook" SEQUENCE="false" COMMENT="Where Zoom points come from: gradebook or attendance (local_zoomattendance)."/>
+        <FIELD NAME="zoomattendpoints" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="2" SEQUENCE="false" COMMENT="Points per percent of a Zoom class attended (local_zoomattendance)."/>
         <FIELD NAME="otherpoints" TYPE="number" LENGTH="10" DECIMALS="2" NOTNULL="true" DEFAULT="0" SEQUENCE="false" COMMENT="Points per mark for every other graded activity type. 0 means they do not count."/>
         <FIELD NAME="topn" TYPE="int" LENGTH="5" NOTNULL="true" DEFAULT="10" SEQUENCE="false" COMMENT="How many top students the full leaderboard shows. 0 shows everyone."/>
         <FIELD NAME="showinline" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1" SEQUENCE="false" COMMENT="1 to show a short summary on the course page."/>

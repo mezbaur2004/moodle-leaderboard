@@ -79,6 +79,8 @@ Points can go down: if a teacher lowers a grade, the points follow.
 | Assignment, submitted late | 1 | Points per mark (set to 2 to ignore lateness) |
 | Quiz | 2 | Points per mark |
 | Zoom meeting | 2 | Points per mark |
+| Zoom points from | Gradebook | Or the Zoom attendance plugin (`local_zoomattendance`) |
+| Zoom attendance, per percent | 2 | Points per percent of a class attended (92% gives 184); only used with the attendance plugin |
 | Other graded activities | 0 | Points per mark; 0 means they do not count |
 | Use these values in every course | off | When on, teachers cannot change the values per course |
 | Names on the leaderboard | Show names | Or anonymous: students only see their own name |
@@ -100,6 +102,13 @@ created), the number of students shown, and whether a summary appears on the cou
 > **Anonymous mode and groups.** Anonymous mode hides names, but the points stay the same in
 > every group's leaderboard. If students can switch between overlapping groups (visible groups,
 > or several groups each), comparing two groups can reveal who has which points.
+
+> **Zoom attendance.** With "Zoom points from" set to the Zoom attendance plugin, each finished
+> class counts once: the percentage the student attended, as `local_zoomattendance` works it
+> out, times the points per percent. Upcoming, cancelled, excluded and reset classes count
+> nothing, Zoom grades in the gradebook stop counting, and the breakdown lists every class.
+> Rankings follow the attendance plugin's data version, so they refresh when attendance is
+> recalculated.
 
 > **Activity name links.** If the "Activity names auto-linking" filter is on, every place the
 > leaderboard's name appears in course text becomes a link. That is why the default name is

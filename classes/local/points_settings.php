@@ -34,8 +34,15 @@ class points_settings {
         'assignlatepoints' => 1,
         'quizpoints' => 2,
         'zoompoints' => 2,
+        'zoomattendpoints' => 2,
         'otherpoints' => 0,
     ];
+
+    /** @var string Zoom points come from the Zoom grades in the gradebook. */
+    public const ZOOM_GRADEBOOK = 'gradebook';
+
+    /** @var string Zoom points come from local_zoomattendance: attendance percentage times points per percent. */
+    public const ZOOM_ATTENDANCE = 'attendance';
 
     /** @var string[] Activity types that have their own setting. Everything else uses otherpoints. */
     public const NAMED_MODULES = ['assign', 'quiz', 'zoom'];
@@ -43,17 +50,52 @@ class points_settings {
     /** @var float[] Field => value. */
     private array $values;
 
+    /** @var string Where Zoom points come from: ZOOM_GRADEBOOK or ZOOM_ATTENDANCE. */
+    private string $zoomsource;
+
     /**
      * Constructor.
      *
      * @param array $values Field => points per mark. Missing fields use the built-in defaults.
+     * @param string $zoomsource Where Zoom points come from.
      */
-    public function __construct(array $values) {
+    public function __construct(array $values, string $zoomsource = self::ZOOM_GRADEBOOK) {
         $this->values = [];
         foreach (self::FIELDS as $field => $default) {
             $value = $values[$field] ?? $default;
             $this->values[$field] = max(0.0, (float) $value);
         }
+        $this->zoomsource = $zoomsource === self::ZOOM_ATTENDANCE ? self::ZOOM_ATTENDANCE : self::ZOOM_GRADEBOOK;
+    }
+
+    /**
+     * Whether local_zoomattendance is installed, so it can be a source of Zoom points.
+     *
+     * @return bool
+     */
+    public static function attendance_available(): bool {
+        // Version 0.5.0 (2026100700) has the attendance API this plugin uses.
+        return class_exists(\local_zoomattendance\local\attendance::class)
+            && (int) get_config('local_zoomattendance', 'version') >= 2026100700;
+    }
+
+    /**
+     * Whether Zoom points come from local_zoomattendance. Falls back to the gradebook when the
+     * plugin is not installed.
+     *
+     * @return bool
+     */
+    public function uses_zoom_attendance(): bool {
+        return $this->zoomsource === self::ZOOM_ATTENDANCE && self::attendance_available();
+    }
+
+    /**
+     * Where Zoom points are set to come from.
+     *
+     * @return string ZOOM_GRADEBOOK or ZOOM_ATTENDANCE.
+     */
+    public function get_zoom_source(): string {
+        return $this->zoomsource;
     }
 
     /**
@@ -67,7 +109,7 @@ class points_settings {
             $configured = get_config('leaderboard', $field);
             $values[$field] = ($configured === false || $configured === '') ? $default : $configured;
         }
-        return new self($values);
+        return new self($values, (string) get_config('leaderboard', 'zoomsource'));
     }
 
     /**
@@ -93,7 +135,7 @@ class points_settings {
         foreach (self::FIELDS as $field => $default) {
             $values[$field] = $leaderboard->{$field} ?? $default;
         }
-        return new self($values);
+        return new self($values, (string) ($leaderboard->zoomsource ?? self::ZOOM_GRADEBOOK));
     }
 
     /**
@@ -160,11 +202,11 @@ class points_settings {
     }
 
     /**
-     * All values, for display and for cache keys.
+     * All values and the Zoom source, for cache keys.
      *
-     * @return float[]
+     * @return array
      */
     public function to_array(): array {
-        return $this->values;
+        return $this->values + ['zoomsource' => $this->zoomsource];
     }
 }

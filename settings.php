@@ -43,6 +43,17 @@ if ($ADMIN->fulltree) {
         ));
     }
 
+    $settings->add(new admin_setting_configselect(
+        'leaderboard/zoomsource',
+        get_string('zoomsource', 'leaderboard'),
+        get_string('zoomsource_desc', 'leaderboard'),
+        points_settings::ZOOM_GRADEBOOK,
+        [
+            points_settings::ZOOM_GRADEBOOK => get_string('zoomsource_gradebook', 'leaderboard'),
+            points_settings::ZOOM_ATTENDANCE => get_string('zoomsource_attendance', 'leaderboard'),
+        ]
+    ));
+
     $settings->add(new admin_setting_configcheckbox(
         'leaderboard/lockpoints',
         get_string('lockpoints', 'leaderboard'),

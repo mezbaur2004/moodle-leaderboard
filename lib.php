@@ -142,6 +142,12 @@ function leaderboard_prepare_record(stdClass $data): stdClass {
         }
     }
 
+    $record->zoomsource = $site->get_zoom_source();
+    if (!points_settings::is_locked() && isset($data->zoomsource)) {
+        $record->zoomsource = $data->zoomsource === points_settings::ZOOM_ATTENDANCE
+            ? points_settings::ZOOM_ATTENDANCE : points_settings::ZOOM_GRADEBOOK;
+    }
+
     $defaulttopn = get_config('leaderboard', 'defaulttopn');
     $record->topn = isset($data->topn) ? max(0, (int) $data->topn) : ($defaulttopn === false ? 10 : (int) $defaulttopn);
     $record->showinline = isset($data->showinline) ? (int) (bool) $data->showinline : 1;
