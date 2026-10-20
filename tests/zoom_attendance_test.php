@@ -208,28 +208,42 @@ final class zoom_attendance_test extends \advanced_testcase {
         $this->assertSame((int) $cm->id, $this->lines($course, $board, (int) $ben->id)[0]['cmid']);
     }
 
-    public function test_activity_with_attendance_switched_off_or_hidden_does_not_count(): void {
+    public function test_switched_off_does_not_count_but_hidden_does(): void {
         global $DB;
         [$course, $board] = $this->setup_course();
         $amy = $this->getDataGenerator()->create_and_enrol($course, 'student');
         $off = $this->zoom_class($course, [$amy->id => 60], 3);
         $hidden = $this->zoom_class($course, [$amy->id => 60], 2);
-        $this->zoom_class($course, [$amy->id => 30], 1);
+        $insection = $this->zoom_class($course, [$amy->id => 30], 1);
         \local_zoomattendance\local\sync::sync_all();
+        moveto_module(get_coursemodule_from_id('zoom', $insection->id), $DB->get_record(
+            'course_sections',
+            ['course' => $course->id, 'section' => 1]
+        ));
+        rebuild_course_cache($course->id, true);
         $this->assertSame(500, $this->points($course, $board)[$amy->id]);
 
         $DB->insert_record('local_zoomattendance_setting', (object) ['cmid' => $off->id, 'enabled' => 0,
             'timemodified' => time()]);
+        // Attendance is not secret: hiding an activity, or the section it is in, keeps its points.
         set_coursemodule_visible($hidden->id, 0);
+        set_section_visible($course->id, 1, 0);
+        $this->assertSame(0, (int) get_fast_modinfo($course->id)->get_cm($insection->id)->visible);
+        $this->assertSame(300, $this->points($course, $board)[$amy->id]);
+
+        // An activity being deleted stops counting at once.
+        $DB->set_field('course_modules', 'deletioninprogress', 1, ['id' => $hidden->id]);
+        rebuild_course_cache($course->id, true);
         $this->assertSame(100, $this->points($course, $board)[$amy->id]);
     }
 
-    public function test_zoom_hidden_by_a_restriction_does_not_count(): void {
+    public function test_restrictions_do_not_hide_attendance_but_links_follow_access(): void {
         global $DB;
         set_config('enableavailability', 1);
         [$course, $board] = $this->setup_course();
         $amy = $this->getDataGenerator()->create_and_enrol($course, 'student');
         $ben = $this->getDataGenerator()->create_and_enrol($course, 'student');
+        $teacher = $this->getDataGenerator()->create_and_enrol($course, 'editingteacher');
         $group = $this->getDataGenerator()->create_group(['courseid' => $course->id]);
         $this->getDataGenerator()->create_group_member(['groupid' => $group->id, 'userid' => $amy->id]);
         $cm = $this->zoom_class($course, [$amy->id => 60, $ben->id => 60]);
@@ -238,10 +252,24 @@ final class zoom_attendance_test extends \advanced_testcase {
             'c' => [['type' => 'group', 'id' => (int) $group->id]], 'showc' => [false]]), ['id' => $cm->id]);
         rebuild_course_cache($course->id, true);
 
+        // Ben attended a class meant for another group: it still counts.
         $points = $this->points($course, $board);
         $this->assertSame(200, $points[$amy->id]);
-        $this->assertSame(0, $points[$ben->id]);
-        $this->assertSame([], $this->lines($course, $board, (int) $ben->id));
+        $this->assertSame(200, $points[$ben->id]);
+
+        // His breakdown lists it, without a link he could not open; Amy and the teacher get the link.
+        $url = function (\stdClass $viewer) use ($course, $board, $ben): ?string {
+            $this->setUser($viewer);
+            api::reset_caches();
+            $data = (new output\board(get_fast_modinfo($course->id)->get_cm($board->cmid)))->export_breakdown((int) $ben->id);
+            return $data['rows'][0]['url'];
+        };
+        $this->assertNull($url($ben));
+        $this->assertNotNull($url($teacher));
+        $this->setUser($amy);
+        api::reset_caches();
+        $amydata = (new output\board(get_fast_modinfo($course->id)->get_cm($board->cmid)))->export_breakdown((int) $amy->id);
+        $this->assertNotNull($amydata['rows'][0]['url']);
     }
 
     public function test_groups_teachers_and_unmatched_participants(): void {

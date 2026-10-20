@@ -133,4 +133,4 @@ $string['zoomsource'] = 'Zoom points from';
 $string['zoomsource_attendance'] = 'Zoom attendance plugin (percent attended)';
 $string['zoomsource_desc'] = 'Where Zoom points come from: the Zoom grades in the gradebook, or the attendance measured by the Zoom attendance plugin (local_zoomattendance), counted per class from the percentage attended. With the attendance plugin, Zoom grades in the gradebook do not count. If the plugin is not installed, the gradebook is used.';
 $string['zoomsource_gradebook'] = 'Gradebook (Zoom grades)';
-$string['zoomsource_help'] = 'Gradebook: Zoom grades count like other grades. Zoom attendance plugin: each finished class counts by the percentage of it the student attended, and Zoom grades do not count.';
+$string['zoomsource_help'] = 'Gradebook: Zoom grades count like other grades. Zoom attendance plugin: each finished class counts by the percentage of it the student attended, also when the Zoom activity is hidden, and Zoom grades do not count.';

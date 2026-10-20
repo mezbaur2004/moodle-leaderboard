@@ -26,9 +26,12 @@ use mod_leaderboard\local\points_settings;
  * Each finished class of a Zoom activity counts once: the percentage of the class the
  * student attended (as the attendance plugin works it out) times the points per percent.
  * Only classes the attendance plugin has evaluated count, so upcoming, cancelled, excluded
- * and reset classes, and classes without a participant report, earn nothing. Zoom
- * activities that are hidden, being deleted, have attendance switched off, or are hidden
- * from the student by access restrictions do not count either.
+ * and reset classes, and classes without a participant report, earn nothing, and nor do
+ * Zoom activities with attendance switched off or being deleted.
+ *
+ * Unlike grades, attendance is not secret: students know whether they joined a class. So a
+ * Zoom activity still counts when a teacher hides it (often done to tidy the course page
+ * once its classes are over), and access restrictions do not matter either.
  *
  * @package    mod_leaderboard
  * @copyright  2026 Pedago Academy
@@ -55,7 +58,7 @@ class zoom_attendance_source implements source {
         $modinfo = get_fast_modinfo($courseid);
         $cms = [];
         foreach ($modinfo->get_instances_of('zoom') as $cm) {
-            if ($cm->visible && !$cm->deletioninprogress) {
+            if (!$cm->deletioninprogress) {
                 $cms[(int) $cm->id] = $cm;
             }
         }
@@ -66,7 +69,6 @@ class zoom_attendance_source implements source {
         if (!$userset) {
             return $result;
         }
-        $access = new activity_access($courseid, array_keys($cms), $now, $result);
 
         $points = [];
         foreach ($cms as $cmid => $cm) {
@@ -82,7 +84,7 @@ class zoom_attendance_source implements source {
                 $points[$cmid] = $activity;
             }
         }
-        return $this->add_points($result, $points, $userset, $access, $perpercent, $keeplines);
+        return $this->add_points($result, $points, $perpercent, $keeplines);
     }
 
     /**
@@ -139,12 +141,10 @@ class zoom_attendance_source implements source {
     }
 
     /**
-     * Add the points of the classes read, after the access checks.
+     * Add the points of the classes read.
      *
      * @param result $result Where to add them.
      * @param array $points cmid => what read_activity() returned.
-     * @param array $userset userid => index, the users read.
-     * @param activity_access $access Access restriction checks.
      * @param float $perpercent Points per percent attended.
      * @param bool $keeplines Whether this is a breakdown.
      * @return result
@@ -152,29 +152,13 @@ class zoom_attendance_source implements source {
     private function add_points(
         result $result,
         array $points,
-        array $userset,
-        activity_access $access,
         float $perpercent,
         bool $keeplines
     ): result {
-        // Users with a result, by activity, so access restrictions can be checked in one go.
-        $byactivity = [];
-        foreach ($points as $cmid => [, , $attended, ]) {
-            foreach ($attended as $users) {
-                foreach (array_keys($users) as $userid) {
-                    $byactivity[$cmid][] = $userid;
-                }
-            }
-        }
-        $access->preload($byactivity);
-
         foreach ($points as $cmid => [$cm, $classes, $attended, $expected]) {
             foreach ($classes as $occurrenceid => [$occurrence, $denominator]) {
                 $users = ($attended[$occurrenceid] ?? []) + ($expected[$occurrenceid] ?? []);
                 foreach ($users as $userid => $secs) {
-                    if ($access->is_hidden_from($cmid, $userid)) {
-                        continue;
-                    }
                     $percent = round((float) calculator::percentage($secs, $denominator), 2);
                     $classpoints = $percent * $perpercent;
                     if (!$keeplines) {
