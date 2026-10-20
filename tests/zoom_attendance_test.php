@@ -322,6 +322,58 @@ final class zoom_attendance_test extends \advanced_testcase {
         $this->assertEquals(0, $benlines[0]['points']);
     }
 
+    public function test_only_people_on_the_class_list_earn_points(): void {
+        global $DB;
+        [$course, $board] = $this->setup_course();
+        $dg = $this->getDataGenerator();
+        $amy = $dg->create_and_enrol($course, 'student');
+        // Enrolled before the class, as students are (not after it, which would add her to its list).
+        $DB->set_field('user_enrolments', 'timecreated', time() - DAYSECS, ['userid' => $amy->id]);
+        // Hidden from students while its class ran (three hours ago): nobody was on its list, so
+        // Amy, who joined by the link, earns nothing for it, as in the attendance reports.
+        $generator = $dg->get_plugin_generator('local_zoomattendance');
+        $start = time() - 3 * HOURSECS;
+        $hidden = $generator->create_zoom(['course' => $course->id, 'start_time' => $start, 'duration' => HOURSECS,
+            'visible' => 0]);
+        $session = $generator->create_session($hidden, $start, $start + HOURSECS);
+        $generator->create_participant($session, $start, $start + HOURSECS, ['userid' => $amy->id]);
+        \local_zoomattendance\local\sync::sync_all();
+        $this->assertSame(0, $this->points($course, $board)[$amy->id]);
+        $this->assertCount(0, $this->lines($course, $board, (int) $amy->id));
+        // Shown again later: the list is still the one from the class time.
+        set_coursemodule_visible($hidden->id, 1);
+        $this->assertSame(0, $this->points($course, $board)[$amy->id]);
+
+        // Added to the list by hand in Zoom attendance (0.7.0): the class counts for her.
+        if (!method_exists(\local_zoomattendance\local\roster::class, 'add_by_hand')) {
+            return;
+        }
+        $this->setAdminUser();
+        $occurrence = $DB->get_record('local_zoomattendance_occ', ['zoomid' => $hidden->instance], '*', MUST_EXIST);
+        $cm = get_fast_modinfo($course->id)->get_cm($hidden->id);
+        \local_zoomattendance\local\roster::add_by_hand($occurrence, $cm, (int) $amy->id, 'student', 'Joined by the link');
+        $this->assertSame(200, $this->points($course, $board)[$amy->id]);
+    }
+
+    public function test_someone_enrolled_after_a_class_they_joined_earns_its_points(): void {
+        if (!method_exists(\local_zoomattendance\local\roster::class, 'add_joiners')) {
+            $this->markTestSkipped('Needs local_zoomattendance 0.7.0.');
+        }
+        [$course, $board] = $this->setup_course();
+        $dg = $this->getDataGenerator();
+        $amy = $dg->create_and_enrol($course, 'student');
+        // Lee joins by the link before being enrolled.
+        $lee = $dg->create_user();
+        $this->zoom_class($course, [$amy->id => 60, $lee->id => 30], 2);
+        \local_zoomattendance\local\sync::sync_all();
+        $this->assertArrayNotHasKey($lee->id, $this->points($course, $board));
+
+        // Enrolled afterwards: Zoom attendance adds Lee to that class's list, and it counts.
+        $dg->enrol_user($lee->id, $course->id, 'student');
+        $this->assertSame(100, $this->points($course, $board)[$lee->id]);
+        $this->assertSame(200, $this->points($course, $board)[$amy->id]);
+    }
+
     public function test_locked_site_values_decide_the_source(): void {
         global $DB;
         [$course, $board] = $this->setup_course();

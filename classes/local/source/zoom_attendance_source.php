@@ -17,21 +17,23 @@
 namespace mod_leaderboard\local\source;
 
 use local_zoomattendance\local\attendance;
-use local_zoomattendance\local\calculator;
 use mod_leaderboard\local\points_settings;
 
 /**
  * Points from Zoom attendance, as measured by local_zoomattendance.
  *
- * Each finished class of a Zoom activity counts once: the percentage of the class the
- * student attended (as the attendance plugin works it out) times the points per percent.
+ * Each finished class of a Zoom activity counts once for each student on its class list: the
+ * percentage of the class the student attended (as the attendance plugin works it out) times
+ * the points per percent.
  * Only classes the attendance plugin has evaluated count, so upcoming, cancelled, excluded
  * and reset classes, and classes without a participant report, earn nothing, and nor do
  * Zoom activities with attendance switched off or being deleted.
  *
  * Unlike grades, attendance is not secret: students know whether they joined a class. So a
- * Zoom activity still counts when a teacher hides it (often done to tidy the course page
- * once its classes are over), and access restrictions do not matter either.
+ * Zoom activity still counts when a teacher hides it or restricts it afterwards (often done to
+ * tidy the course page once its classes are over). Who counts for a class is the attendance
+ * plugin's class list, set when the class ended: students it was hidden from, or restricted
+ * away from, at the time are not on it.
  *
  * @package    mod_leaderboard
  * @copyright  2026 Pedago Academy
@@ -88,12 +90,19 @@ class zoom_attendance_source implements source {
     }
 
     /**
-     * Read one Zoom activity's evaluated classes and who attended them.
+     * Read one Zoom activity's evaluated classes, with the percentage attended of everyone on
+     * each class's list.
+     *
+     * Zoom attendance decides who counts for a class (its class list): someone who joined a class
+     * they were not on the list for (not enrolled then, or the activity was hidden from them or
+     * restricted to other groups) earns nothing for it, as in the attendance reports; someone on
+     * the list who missed it gets 0%. The percentage is Zoom attendance's own.
      *
      * @param \cm_info $cm The Zoom activity.
      * @param array $userset userid => index, the users to read.
      * @param bool $keeplines Whether this is a breakdown.
-     * @return array|null [cm, classes, attended, expected], or null when nothing counts.
+     * @return array|null [cm, classes (occurrence id => occurrence), percents (occurrence id =>
+     *     userid => percentage)], or null when nothing counts.
      */
     private function read_activity(\cm_info $cm, array $userset, bool $keeplines): ?array {
         $attendance = new attendance($cm);
@@ -102,42 +111,31 @@ class zoom_attendance_source implements source {
         }
         $classes = [];
         foreach ($attendance->get_occurrences() as $occurrence) {
-            if ($attendance->state($occurrence) !== attendance::STATE_EVALUATED) {
-                continue;
-            }
-            $denominator = $attendance->settings->denominator_for($occurrence);
-            if ($denominator > 0) {
-                $classes[(int) $occurrence->id] = [$occurrence, $denominator];
+            if ($attendance->state($occurrence) === attendance::STATE_EVALUATED) {
+                $classes[(int) $occurrence->id] = $occurrence;
             }
         }
         if (!$classes) {
             return null;
         }
-        // A breakdown is for one student: read only their rows.
+        $candidates = $attendance->get_candidates(0, array_keys($userset));
+        if (!$candidates) {
+            return null;
+        }
+        // A breakdown is for one student: read only their rows. Only the candidates' rows matter.
         $single = count($userset) === 1 ? (int) array_key_first($userset) : null;
-        $attended = [];
-        foreach ($attendance->get_results(array_keys($classes), $single) as $occurrenceid => $rows) {
-            foreach ($rows as $row) {
-                $userid = (int) $row->userid;
-                if ($userid && isset($userset[$userid])) {
-                    $attended[$occurrenceid][$userid] = max($attended[$occurrenceid][$userid] ?? 0, (int) $row->attendedsecs);
-                }
+        $keys = array_flip(array_map(function ($userid) {
+            return 'u:' . $userid;
+        }, array_keys($candidates)));
+        $results = $attendance->get_results(array_keys($classes), $single);
+        $percents = [];
+        foreach ($classes as $occurrenceid => $occurrence) {
+            $rows = array_intersect_key($results[$occurrenceid] ?? [], $keys);
+            foreach ($attendance->evaluate($occurrence, $candidates, $rows)->expected as $userid => $row) {
+                $percents[$occurrenceid][(int) $userid] = (float) ($row->percentage ?? 0);
             }
         }
-        // A breakdown lists missed classes too, but only those the student was expected at
-        // (enrolled at the time), as the attendance report does.
-        $expected = [];
-        if ($keeplines) {
-            $candidates = $attendance->get_candidates(0, array_keys($userset));
-            foreach ($classes as $occurrenceid => [$occurrence]) {
-                foreach ($candidates as $userid => $candidate) {
-                    if ($attendance->is_expected($candidate, $occurrence)) {
-                        $expected[$occurrenceid][(int) $userid] = 0;
-                    }
-                }
-            }
-        }
-        return [$cm, $classes, $attended, $expected];
+        return [$cm, $classes, $percents];
     }
 
     /**
@@ -155,11 +153,10 @@ class zoom_attendance_source implements source {
         float $perpercent,
         bool $keeplines
     ): result {
-        foreach ($points as $cmid => [$cm, $classes, $attended, $expected]) {
-            foreach ($classes as $occurrenceid => [$occurrence, $denominator]) {
-                $users = ($attended[$occurrenceid] ?? []) + ($expected[$occurrenceid] ?? []);
-                foreach ($users as $userid => $secs) {
-                    $percent = round((float) calculator::percentage($secs, $denominator), 2);
+        foreach ($points as $cmid => [$cm, $classes, $percents]) {
+            foreach ($classes as $occurrenceid => $occurrence) {
+                foreach ($percents[$occurrenceid] ?? [] as $userid => $percentage) {
+                    $percent = round($percentage, 2);
                     $classpoints = $percent * $perpercent;
                     if (!$keeplines) {
                         $result->add_points($userid, $classpoints);
