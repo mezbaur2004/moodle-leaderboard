@@ -124,12 +124,15 @@ class board {
         global $DB, $USER;
 
         $lines = api::get_breakdown($this->cm, $userid);
+        $modinfo = get_fast_modinfo($this->cm->course);
         $rows = [];
         $total = 0.0;
         foreach ($lines as $line) {
             $total += $line['points'];
             $url = null;
-            if ($line['cmid']) {
+            // Link only to activities the viewer can open (a hidden Zoom activity still earns attendance points).
+            $linked = $line['cmid'] ? ($modinfo->get_cms()[$line['cmid']] ?? null) : null;
+            if ($linked && $linked->uservisible) {
                 $url = (new \moodle_url('/mod/' . $line['modname'] . '/view.php', ['id' => $line['cmid']]))->out(false);
             }
             $rows[] = [

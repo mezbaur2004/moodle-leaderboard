@@ -107,6 +107,9 @@ created), the number of students shown, and whether a summary appears on the cou
 > class counts once: the percentage the student attended, as `local_zoomattendance` works it
 > out, times the points per percent. Upcoming, cancelled, excluded and reset classes count
 > nothing, Zoom grades in the gradebook stop counting, and the breakdown lists every class.
+> Attendance is not secret, so a Zoom activity keeps counting when it is hidden (for example
+> to tidy the course page after its classes) or restricted; only deleting it, or switching its
+> attendance off, removes its points.
 > Rankings follow the attendance plugin's data version, so they refresh when attendance is
 > recalculated.
 
